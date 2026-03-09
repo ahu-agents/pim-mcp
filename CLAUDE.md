@@ -8,7 +8,7 @@ Monorepo with 4 packages:
 - `packages/core` — `@miguelarios/pim-core` — shared config, validation, errors, vCard utilities
 - `packages/card-mcp` — `@miguelarios/card-mcp` — CardDAV contacts MCP server (6 tools)
 - `packages/email-mcp` — `@miguelarios/email-mcp` — IMAP/SMTP email MCP server (10 tools)
-- `packages/cal-mcp` — `@miguelarios/cal-mcp` — (stub, Phase 3)
+- `packages/cal-mcp` — `@miguelarios/cal-mcp` — CalDAV calendar MCP server (9 tools)
 
 ## Development Commands
 
@@ -46,3 +46,10 @@ Monorepo with 4 packages:
 - `vi.mock("tsdav")` for CardDAV tests
 - `vi.mock("imapflow")` and `vi.mock("mailparser")` for email IMAP tests
 - `vi.mock("nodemailer")` with `vi.hoisted()` for SMTP tests
+
+## Publishing
+
+- All 4 packages publish independently to npm under `@miguelarios` scope
+- Tag-triggered CI: push `<package>/v<version>` tag (e.g., `pim-core/v0.1.0`) to trigger publish
+- Publish order: core first, then MCP servers
+- `.npmignore` excludes test files from published packages
