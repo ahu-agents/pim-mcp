@@ -1,6 +1,17 @@
 {
   "name": "@miguelarios/pim-core",
   "version": "0.1.0",
+  "description": "Shared config, validation, errors, and utilities for PIM agent MCP servers",
+  "keywords": ["pim", "mcp", "config", "validation"],
+  "license": "MIT",
+  "author": "Miguel Rios",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miguelarios/pim-agents.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/miguelarios/pim-agents",
+  "bugs": "https://github.com/miguelarios/pim-agents/issues",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

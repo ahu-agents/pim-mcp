@@ -1,6 +1,17 @@
 {
   "name": "@miguelarios/card-mcp",
   "version": "0.1.0",
+  "description": "MCP server for contacts via CardDAV — CRUD contacts, search, resolve names to emails",
+  "keywords": ["mcp", "contacts", "carddav", "vcard"],
+  "license": "MIT",
+  "author": "Miguel Rios",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miguelarios/pim-agents.git",
+    "directory": "packages/card-mcp"
+  },
+  "homepage": "https://github.com/miguelarios/pim-agents",
+  "bugs": "https://github.com/miguelarios/pim-agents/issues",
   "type": "module",
   "bin": {
     "card-mcp": "dist/bin/cli.js"
@@ -13,7 +24,7 @@
     "start": "node dist/bin/cli.js"
   },
   "dependencies": {
-    "@miguelarios/pim-core": "*",
+    "@miguelarios/pim-core": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "tsdav": "^2.1.0"
   },
