@@ -16,7 +16,6 @@
   "bin": {
     "card-mcp": "dist/bin/cli.js"
   },
-  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",

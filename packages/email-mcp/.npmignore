@@ -1,0 +1,8 @@
+src/
+dist/__tests__/
+tsconfig.json
+vitest.config.ts
+*.test.js
+*.test.d.ts
+*.test.js.map
+*.test.d.ts.map
