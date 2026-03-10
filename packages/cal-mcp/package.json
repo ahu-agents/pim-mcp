@@ -1,8 +1,13 @@
 {
   "name": "@miguelarios/cal-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for calendars via CalDAV — CRUD events, free/busy, multi-provider",
-  "keywords": ["mcp", "calendar", "caldav", "ical"],
+  "keywords": [
+    "mcp",
+    "calendar",
+    "caldav",
+    "ical"
+  ],
   "license": "MIT",
   "author": "Miguel Rios",
   "repository": {
