@@ -59,44 +59,45 @@ export interface CalDavConfig {
   accounts: CalDavAccount[];
 }
 
-const CalDavAccountSchema = v.object({
-  id: v.pipe(v.string(), v.minLength(1, "Account id cannot be empty")),
-  url: v.pipe(v.string(), v.url("Account url must be a valid URL")),
-  username: v.pipe(v.string(), v.minLength(1, "Account username cannot be empty")),
-  password: v.pipe(v.string(), v.minLength(1, "Account password cannot be empty")),
-});
-
-const CalDavAccountsSchema = v.pipe(
-  v.array(CalDavAccountSchema),
-  v.minLength(1, "At least one CalDAV account is required"),
-);
-
 export function loadCalDavConfig(): CalDavConfig {
-  const raw = process.env.CALDAV_ACCOUNTS;
-  if (!raw) {
-    throw new ConfigurationError("CALDAV_ACCOUNTS environment variable is required");
-  }
+  const prefix = "CALDAV_";
+  const suffix = "_URL";
+  const accounts: CalDavAccount[] = [];
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new ConfigurationError("CALDAV_ACCOUNTS must be valid JSON");
-  }
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith(prefix) && key.endsWith(suffix) && key.length > prefix.length + suffix.length) {
+      const id = key.slice(prefix.length, -suffix.length).toLowerCase();
+      const url = process.env[key] ?? "";
+      const user = process.env[`${prefix}${key.slice(prefix.length, -suffix.length)}_USER`] ?? "";
+      const pass = process.env[`${prefix}${key.slice(prefix.length, -suffix.length)}_PASS`] ?? "";
 
-  try {
-    const accounts = v.parse(CalDavAccountsSchema, parsed);
-    return { accounts };
-  } catch (error) {
-    if (v.isValiError(error)) {
-      const messages = error.issues.map((issue) => {
-        const path = issue.path?.map((p) => p.key).join(".") ?? "unknown";
-        return `${path}: ${issue.message}`;
-      });
-      throw new ConfigurationError(`Config validation failed: ${messages.join("; ")}`);
+      const errors: string[] = [];
+      if (!url) errors.push(`CALDAV_${id.toUpperCase()}_URL is required`);
+      else {
+        try {
+          new URL(url);
+        } catch {
+          errors.push(`CALDAV_${id.toUpperCase()}_URL must be a valid URL`);
+        }
+      }
+      if (!user) errors.push(`CALDAV_${id.toUpperCase()}_USER is required`);
+      if (!pass) errors.push(`CALDAV_${id.toUpperCase()}_PASS is required`);
+
+      if (errors.length > 0) {
+        throw new ConfigurationError(`Config validation failed: ${errors.join("; ")}`);
+      }
+
+      accounts.push({ id, url, username: user, password: pass });
     }
-    throw error;
   }
+
+  if (accounts.length === 0) {
+    throw new ConfigurationError(
+      "No CalDAV accounts found. Set CALDAV_<ID>_URL, CALDAV_<ID>_USER, and CALDAV_<ID>_PASS environment variables.",
+    );
+  }
+
+  return { accounts };
 }
 
 export interface EmailConfig {

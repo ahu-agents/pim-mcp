@@ -88,14 +88,16 @@ Optional email env vars: `IMAP_PORT` (default 993), `IMAP_SECURE` (default true)
       "command": "npx",
       "args": ["-y", "@miguelarios/cal-mcp"],
       "env": {
-        "CALDAV_ACCOUNTS": "[{\"id\":\"mailbox\",\"url\":\"https://dav.mailbox.org/caldav/\",\"username\":\"user@mailbox.org\",\"password\":\"app-password\"}]"
+        "CALDAV_MAILBOX_URL": "https://dav.mailbox.org/caldav/",
+        "CALDAV_MAILBOX_USER": "user@mailbox.org",
+        "CALDAV_MAILBOX_PASS": "app-password"
       }
     }
   }
 }
 ```
 
-`CALDAV_ACCOUNTS` is a JSON array — each entry needs `id`, `url`, `username`, and `password`. You can configure multiple providers.
+Add multiple providers by using different IDs: `CALDAV_NEXTCLOUD_URL`, `CALDAV_NEXTCLOUD_USER`, `CALDAV_NEXTCLOUD_PASS`, etc.
 
 ### Contacts
 
@@ -136,7 +138,9 @@ Optional email env vars: `IMAP_PORT` (default 993), `IMAP_SECURE` (default true)
       "command": "npx",
       "args": ["-y", "@miguelarios/cal-mcp"],
       "env": {
-        "CALDAV_ACCOUNTS": "[{\"id\":\"provider\",\"url\":\"https://dav.example.com/caldav/\",\"username\":\"user\",\"password\":\"app-password\"}]"
+        "CALDAV_MAILBOX_URL": "https://dav.mailbox.org/caldav/",
+        "CALDAV_MAILBOX_USER": "user@mailbox.org",
+        "CALDAV_MAILBOX_PASS": "app-password"
       }
     },
     "contacts": {

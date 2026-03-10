@@ -10,27 +10,24 @@ npx @miguelarios/cal-mcp
 
 ## Environment Variables
 
+Configure one or more CalDAV accounts using prefixed env vars. The `<ID>` becomes the provider identifier.
+
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `CALDAV_ACCOUNTS` | Yes | JSON array of CalDAV accounts |
+| `CALDAV_<ID>_URL` | Yes | CalDAV server URL |
+| `CALDAV_<ID>_USER` | Yes | CalDAV username |
+| `CALDAV_<ID>_PASS` | Yes | CalDAV password |
 
-### CALDAV_ACCOUNTS format
+### Example: two providers
 
-```json
-[
-  {
-    "id": "mailbox",
-    "url": "https://dav.mailbox.org/caldav/",
-    "username": "user@mailbox.org",
-    "password": "app-password"
-  },
-  {
-    "id": "nextcloud",
-    "url": "https://cloud.example.com/remote.php/dav/calendars/user/",
-    "username": "user",
-    "password": "app-password"
-  }
-]
+```bash
+CALDAV_MAILBOX_URL=https://dav.mailbox.org/caldav/
+CALDAV_MAILBOX_USER=user@mailbox.org
+CALDAV_MAILBOX_PASS=app-password
+
+CALDAV_NEXTCLOUD_URL=https://cloud.example.com/remote.php/dav/calendars/user/
+CALDAV_NEXTCLOUD_USER=user
+CALDAV_NEXTCLOUD_PASS=app-password
 ```
 
 ## Tools
