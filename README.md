@@ -52,6 +52,106 @@ AI agent tooling for email (IMAP/SMTP), calendar (CalDAV), and contacts (CardDAV
 | `delete_contact` | Delete a contact by UID |
 | `resolve_contact` | Given a name, return email address |
 
+## Configuration
+
+Add the servers to your MCP client config (Claude Desktop, Claude Code, etc.). Credentials are passed via environment variables.
+
+### Email
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "npx",
+      "args": ["-y", "@miguelarios/email-mcp"],
+      "env": {
+        "IMAP_HOST": "imap.example.com",
+        "IMAP_USER": "user@example.com",
+        "IMAP_PASS": "your-app-password",
+        "SMTP_HOST": "smtp.example.com",
+        "SMTP_USER": "user@example.com",
+        "SMTP_PASS": "your-app-password"
+      }
+    }
+  }
+}
+```
+
+Optional email env vars: `IMAP_PORT` (default 993), `IMAP_SECURE` (default true), `SMTP_PORT` (default 465), `SMTP_SECURE` (default true), `SMTP_FROM_NAME`.
+
+### Calendar
+
+```json
+{
+  "mcpServers": {
+    "calendar": {
+      "command": "npx",
+      "args": ["-y", "@miguelarios/cal-mcp"],
+      "env": {
+        "CALDAV_ACCOUNTS": "[{\"id\":\"mailbox\",\"url\":\"https://dav.mailbox.org/caldav/\",\"username\":\"user@mailbox.org\",\"password\":\"app-password\"}]"
+      }
+    }
+  }
+}
+```
+
+`CALDAV_ACCOUNTS` is a JSON array — each entry needs `id`, `url`, `username`, and `password`. You can configure multiple providers.
+
+### Contacts
+
+```json
+{
+  "mcpServers": {
+    "contacts": {
+      "command": "npx",
+      "args": ["-y", "@miguelarios/card-mcp"],
+      "env": {
+        "CARDDAV_URL": "https://dav.example.com/carddav/",
+        "CARDDAV_USER": "user@example.com",
+        "CARDDAV_PASS": "your-app-password"
+      }
+    }
+  }
+}
+```
+
+### All three together
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "npx",
+      "args": ["-y", "@miguelarios/email-mcp"],
+      "env": {
+        "IMAP_HOST": "imap.example.com",
+        "IMAP_USER": "user@example.com",
+        "IMAP_PASS": "your-app-password",
+        "SMTP_HOST": "smtp.example.com",
+        "SMTP_USER": "user@example.com",
+        "SMTP_PASS": "your-app-password"
+      }
+    },
+    "calendar": {
+      "command": "npx",
+      "args": ["-y", "@miguelarios/cal-mcp"],
+      "env": {
+        "CALDAV_ACCOUNTS": "[{\"id\":\"provider\",\"url\":\"https://dav.example.com/caldav/\",\"username\":\"user\",\"password\":\"app-password\"}]"
+      }
+    },
+    "contacts": {
+      "command": "npx",
+      "args": ["-y", "@miguelarios/card-mcp"],
+      "env": {
+        "CARDDAV_URL": "https://dav.example.com/carddav/",
+        "CARDDAV_USER": "user@example.com",
+        "CARDDAV_PASS": "your-app-password"
+      }
+    }
+  }
+}
+```
+
 ## License
 
 MIT
