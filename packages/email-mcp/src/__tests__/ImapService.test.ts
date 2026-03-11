@@ -231,6 +231,63 @@ describe("ImapService", () => {
         { uid: true },
       );
     });
+
+    it("Tier 3: fetches only the paginated slice when >1000 UIDs are returned", async () => {
+      // Generate 1500 ascending UIDs: [1, 2, ..., 1500]
+      const allUids = Array.from({ length: 1500 }, (_, i) => i + 1);
+      mockSearch.mockResolvedValueOnce(allUids);
+
+      // After reversing: [1500, 1499, ..., 1]
+      // With offset=0, limit=2 the slice is [1500, 1499]
+      // fetchSummaries is called with those two UIDs
+      const fetchedMessages = [
+        {
+          uid: 1500,
+          envelope: {
+            messageId: "<msg-1500@test.com>",
+            subject: "Older",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-05"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 1499,
+          envelope: {
+            messageId: "<msg-1499@test.com>",
+            subject: "Newest",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "d@test.com", name: "D" }],
+            date: new Date("2026-03-10"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of fetchedMessages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 2, offset: 0 });
+
+      // Only 2 messages fetched, not all 1500
+      expect(results).toHaveLength(2);
+
+      // fetch was called with only the sliced UIDs, not all 1500
+      expect(mockFetch).toHaveBeenCalledWith(
+        "1500,1499",
+        expect.objectContaining({ envelope: true, uid: true }),
+        { uid: true },
+      );
+
+      // Results sorted by date descending
+      expect(results[0].subject).toBe("Newest");
+      expect(results[1].subject).toBe("Older");
+    });
   });
 
   describe("fetchEmail", () => {
