@@ -33,10 +33,12 @@ function parseTokens(value: string): string[] {
 /**
  * Build imapflow-compatible search criteria from structured params.
  * All params combine with AND logic.
+ * Returns a plain object when all keys are unique, or an array of criteria
+ * objects when there are duplicate keys (imapflow ANDs array elements).
  */
 export function buildSearchCriteria(
   params: SearchParams,
-): Record<string, unknown> {
+): Record<string, unknown> | Record<string, unknown>[] {
   const criteria: Record<string, unknown>[] = [];
 
   // Simple string fields → IMAP search keys
@@ -108,20 +110,28 @@ export function buildSearchCriteria(
     return criteria[0];
   }
 
-  // Multiple criteria → merge into single object (imapflow ANDs top-level keys)
-  // For duplicate keys, we need to wrap in an implicit AND structure
+  // Multiple criteria → try to merge into a flat object (imapflow ANDs top-level keys).
+  // If any key appears more than once, return the array instead — imapflow ANDs array elements.
+  const seenKeys = new Set<string>();
+  let hasDuplicateKey = false;
+  for (const c of criteria) {
+    for (const key of Object.keys(c)) {
+      if (seenKeys.has(key)) {
+        hasDuplicateKey = true;
+        break;
+      }
+      seenKeys.add(key);
+    }
+    if (hasDuplicateKey) break;
+  }
+
+  if (hasDuplicateKey) {
+    return criteria;
+  }
+
   const merged: Record<string, unknown> = {};
   for (const c of criteria) {
-    for (const [key, value] of Object.entries(c)) {
-      if (key in merged) {
-        // Key collision — need to restructure. imapflow doesn't support
-        // duplicate top-level keys, so we fall back to the last value.
-        // For most real queries this won't happen (different field types).
-        merged[key] = value;
-      } else {
-        merged[key] = value;
-      }
-    }
+    Object.assign(merged, c);
   }
   return merged;
 }

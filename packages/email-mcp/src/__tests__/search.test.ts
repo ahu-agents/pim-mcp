@@ -82,14 +82,14 @@ describe("buildSearchCriteria", () => {
 
   it("maps multiple tags to ANDed keywords", () => {
     const result = buildSearchCriteria({ tags: ["work", "urgent"] });
-    // imapflow AND is expressed as top-level keys; multiple keywords need array wrapping
-    expect(result).toHaveProperty("keyword");
+    // Duplicate keys require array form so both tags are preserved
+    expect(result).toEqual([{ keyword: "work" }, { keyword: "urgent" }]);
   });
 
-  it("splits unquoted subject into keyword AND", () => {
+  it("splits unquoted subject into ANDed criteria", () => {
     const result = buildSearchCriteria({ subject: "dinner movie" });
-    // Should produce two SUBJECT criteria ANDed
-    expect(result).toBeDefined();
+    // Duplicate keys require array form so both words are preserved
+    expect(result).toEqual([{ subject: "dinner" }, { subject: "movie" }]);
   });
 
   it("preserves quoted subject as exact phrase", () => {
