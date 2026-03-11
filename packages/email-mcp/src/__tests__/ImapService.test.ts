@@ -168,6 +168,69 @@ describe("ImapService", () => {
       expect(results[1].uid).toBe(102);
       expect(results[1].subject).toBe("Second");
     });
+
+    it("returns results sorted by date descending", async () => {
+      mockSearch.mockResolvedValueOnce([101, 102, 103]);
+
+      const messages = [
+        {
+          uid: 101,
+          envelope: {
+            messageId: "<msg-101@test.com>",
+            subject: "Old",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-01"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "Newest",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "d@test.com", name: "D" }],
+            date: new Date("2026-03-10"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 103,
+          envelope: {
+            messageId: "<msg-103@test.com>",
+            subject: "Middle",
+            from: [{ address: "e@test.com", name: "E" }],
+            to: [{ address: "f@test.com", name: "F" }],
+            date: new Date("2026-03-05"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 10 });
+      expect(results[0].subject).toBe("Newest");
+      expect(results[1].subject).toBe("Middle");
+      expect(results[2].subject).toBe("Old");
+    });
+
+    it("passes search criteria from SearchParams to IMAP", async () => {
+      mockSearch.mockResolvedValueOnce([]);
+
+      await service.searchEmails("INBOX", { from: "boss@work.com", unread: true });
+      expect(mockSearch).toHaveBeenCalledWith(
+        { from: "boss@work.com", seen: false },
+        { uid: true },
+      );
+    });
   });
 
   describe("fetchEmail", () => {
