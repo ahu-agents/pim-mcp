@@ -165,6 +165,8 @@ describe("ImapService", () => {
       expect(results[0].uid).toBe(101);
       expect(results[0].subject).toBe("First");
       expect(results[0].flags).toContain("\\Seen");
+      expect(results[1].uid).toBe(102);
+      expect(results[1].subject).toBe("Second");
     });
   });
 

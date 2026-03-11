@@ -94,7 +94,7 @@ export class ImapService {
         const searchResult = await client.search(searchCriteria as any, {
           uid: true,
         });
-        const uids = searchResult || [];
+        const uids = (searchResult || []).reverse();
 
         if (uids.length === 0) return [];
 
@@ -110,7 +110,7 @@ export class ImapService {
           flags: true,
           bodyStructure: true,
           uid: true,
-        })) {
+        }, { uid: true })) {
           const envelope = msg.envelope!;
           summaries.push({
             uid: msg.uid,
@@ -131,7 +131,7 @@ export class ImapService {
             hasAttachments: hasAttachmentParts(msg.bodyStructure),
           });
         }
-        return summaries;
+        return summaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       } finally {
         lock.release();
       }
