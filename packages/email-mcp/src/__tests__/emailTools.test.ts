@@ -17,7 +17,7 @@ describe("EMAIL_TOOLS definitions", () => {
 
   it("defines the expected tool names", () => {
     const names = EMAIL_TOOLS.map((t) => t.name);
-    expect(names).toContain("list_emails");
+    expect(names).toContain("search_emails");
     expect(names).toContain("get_email");
     expect(names).toContain("send_email");
     expect(names).toContain("move_email");
@@ -35,10 +35,25 @@ describe("EMAIL_TOOLS definitions", () => {
     expect(tool.inputSchema.required).toContain("subject");
   });
 
-  it("list_emails has folder and query params", () => {
-    const tool = EMAIL_TOOLS.find((t) => t.name === "list_emails")!;
-    expect(tool.inputSchema.properties).toHaveProperty("folder");
-    expect(tool.inputSchema.properties).toHaveProperty("query");
+  it("search_emails has structured search params", () => {
+    const tool = EMAIL_TOOLS.find((t) => t.name === "search_emails")!;
+    const props = tool.inputSchema.properties as Record<string, unknown>;
+    expect(props).toHaveProperty("folder");
+    expect(props).toHaveProperty("query");
+    expect(props).toHaveProperty("body");
+    expect(props).toHaveProperty("from");
+    expect(props).toHaveProperty("to");
+    expect(props).toHaveProperty("cc");
+    expect(props).toHaveProperty("bcc");
+    expect(props).toHaveProperty("subject");
+    expect(props).toHaveProperty("since");
+    expect(props).toHaveProperty("before");
+    expect(props).toHaveProperty("unread");
+    expect(props).toHaveProperty("flagged");
+    expect(props).toHaveProperty("hasAttachment");
+    expect(props).toHaveProperty("tags");
+    expect(props).toHaveProperty("limit");
+    expect(props).toHaveProperty("offset");
   });
 
   it("get_email requires folder and uid", () => {

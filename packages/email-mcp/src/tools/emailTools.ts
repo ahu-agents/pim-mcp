@@ -1,29 +1,78 @@
 import { toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { parseSearchQuery } from "../search.js";
+import type { SearchParams } from "../search.js";
 import type { ImapService } from "../services/ImapService.js";
 import type { SmtpService } from "../services/SmtpService.js";
 
 export const EMAIL_TOOLS: Tool[] = [
   {
-    name: "list_emails",
+    name: "search_emails",
     description:
-      "Search and list emails in a folder. Supports structured query prefixes: from:, to:, subject:, is:unread/read/flagged, has:attachment, since:YYYY-MM-DD, before:YYYY-MM-DD. Plain text searches subject and body. Returns email summaries with UID, subject, sender, date, and flags.",
+      "Search and list emails in a folder. Returns email summaries sorted by date (newest first). All filters combine with AND logic. String params support keyword matching (space-separated words) and exact phrases (use quotes).",
     inputSchema: {
       type: "object",
       properties: {
         folder: {
           type: "string",
-          description: "IMAP folder to search. Defaults to INBOX.",
+          description: 'IMAP folder path. Defaults to "INBOX".',
         },
         query: {
           type: "string",
           description:
-            'Search query with optional prefixes. Examples: "from:boss@work.com is:unread", "subject:meeting", "has:attachment". Plain text searches body.',
+            'Search subject and body. Supports -term for exclusion. Examples: "budget", "dinner -movie".',
+        },
+        body: {
+          type: "string",
+          description: "Search body text only.",
+        },
+        from: {
+          type: "string",
+          description: "Match sender name or email address.",
+        },
+        to: {
+          type: "string",
+          description: "Match recipient name or email address.",
+        },
+        cc: {
+          type: "string",
+          description: "Match CC recipient.",
+        },
+        bcc: {
+          type: "string",
+          description: "Match BCC recipient.",
+        },
+        subject: {
+          type: "string",
+          description: "Match subject line.",
+        },
+        since: {
+          type: "string",
+          description: "Emails on or after this date (YYYY-MM-DD).",
+        },
+        before: {
+          type: "string",
+          description: "Emails before this date (YYYY-MM-DD).",
+        },
+        unread: {
+          type: "boolean",
+          description: "Filter by unread status.",
+        },
+        flagged: {
+          type: "boolean",
+          description: "Filter by flagged/starred status.",
+        },
+        hasAttachment: {
+          type: "boolean",
+          description: "Filter for emails with attachments.",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Filter by IMAP keyword flags.",
         },
         limit: {
           type: "number",
-          description: "Max results to return. Defaults to 20.",
+          description: "Max results to return. Defaults to 50.",
         },
         offset: {
           type: "number",
@@ -264,11 +313,25 @@ export async function handleEmailTool(
     const folder = (args.folder as string) || "INBOX";
 
     switch (name) {
-      case "list_emails": {
-        const query = args.query ? parseSearchQuery(args.query as string) : {};
-        const limit = (args.limit as number) || 20;
+      case "search_emails": {
+        const searchParams: SearchParams = {
+          query: args.query as string | undefined,
+          body: args.body as string | undefined,
+          from: args.from as string | undefined,
+          to: args.to as string | undefined,
+          cc: args.cc as string | undefined,
+          bcc: args.bcc as string | undefined,
+          subject: args.subject as string | undefined,
+          since: args.since as string | undefined,
+          before: args.before as string | undefined,
+          unread: args.unread as boolean | undefined,
+          flagged: args.flagged as boolean | undefined,
+          hasAttachment: args.hasAttachment as boolean | undefined,
+          tags: args.tags as string[] | undefined,
+        };
+        const limit = (args.limit as number) || 50;
         const offset = (args.offset as number) || 0;
-        const emails = await imapService.searchEmails(folder, query, {
+        const emails = await imapService.searchEmails(folder, searchParams, {
           limit,
           offset,
         });
