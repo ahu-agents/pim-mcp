@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { buildSearchCriteria, type SearchParams } from "../search.js";
 
 describe("buildSearchCriteria", () => {
@@ -44,11 +44,13 @@ describe("buildSearchCriteria", () => {
 
   it("maps since param to Date", () => {
     const result = buildSearchCriteria({ since: "2026-03-01" });
+    assert(!Array.isArray(result));
     expect(result.since).toEqual(new Date("2026-03-01"));
   });
 
   it("maps before param to Date", () => {
     const result = buildSearchCriteria({ before: "2026-03-10" });
+    assert(!Array.isArray(result));
     expect(result.before).toEqual(new Date("2026-03-10"));
   });
 
@@ -99,6 +101,7 @@ describe("buildSearchCriteria", () => {
 
   it("maps query to OR of subject and body", () => {
     const result = buildSearchCriteria({ query: "budget" });
+    assert(!Array.isArray(result));
     expect(result.or).toBeDefined();
     expect(result.or).toEqual([
       { subject: "budget" },
@@ -108,6 +111,7 @@ describe("buildSearchCriteria", () => {
 
   it("handles query with -exclusion", () => {
     const result = buildSearchCriteria({ query: "dinner -movie" });
+    assert(!Array.isArray(result));
     expect(result.or).toBeDefined();
     expect(result.not).toBeDefined();
   });
@@ -118,6 +122,7 @@ describe("buildSearchCriteria", () => {
       unread: true,
       since: "2026-03-01",
     });
+    assert(!Array.isArray(result));
     expect(result.from).toBe("boss@work.com");
     expect(result.seen).toBe(false);
     expect(result.since).toEqual(new Date("2026-03-01"));
