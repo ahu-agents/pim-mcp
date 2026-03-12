@@ -1,7 +1,7 @@
 import { type EmailConfig, EmailError, ErrorCode, toPimError } from "@miguelarios/pim-core";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
-import { buildSearchCriteria, type SearchParams } from "../search.js";
+import { type SearchParams, buildSearchCriteria } from "../search.js";
 
 export interface EmailSummary {
   uid: number;
@@ -105,13 +105,12 @@ export class ImapService {
           const allSummaries = await this.fetchSummaries(client, uids);
           allSummaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           return allSummaries.slice(offset, offset + limit);
-        } else {
-          // Tier 3: reverse UIDs, slice, fetch, sort slice
-          uids.reverse();
-          const fetchUids = uids.slice(offset, offset + limit);
-          const summaries = await this.fetchSummaries(client, fetchUids);
-          return summaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         }
+        // Tier 3: reverse UIDs, slice, fetch, sort slice
+        uids.reverse();
+        const fetchUids = uids.slice(offset, offset + limit);
+        const summaries = await this.fetchSummaries(client, fetchUids);
+        return summaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       } finally {
         lock.release();
       }

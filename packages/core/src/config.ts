@@ -65,7 +65,11 @@ export function loadCalDavConfig(): CalDavConfig {
   const accounts: CalDavAccount[] = [];
 
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith(prefix) && key.endsWith(suffix) && key.length > prefix.length + suffix.length) {
+    if (
+      key.startsWith(prefix) &&
+      key.endsWith(suffix) &&
+      key.length > prefix.length + suffix.length
+    ) {
       const id = key.slice(prefix.length, -suffix.length).toLowerCase();
       const url = process.env[key] ?? "";
       const user = process.env[`${prefix}${key.slice(prefix.length, -suffix.length)}_USER`] ?? "";

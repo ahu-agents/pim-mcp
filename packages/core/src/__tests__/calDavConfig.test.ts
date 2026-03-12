@@ -6,7 +6,10 @@ describe("loadCalDavConfig", () => {
     vi.stubEnv("CALDAV_MAILBOX_URL", "https://dav.mailbox.org/caldav/");
     vi.stubEnv("CALDAV_MAILBOX_USER", "user@example.com");
     vi.stubEnv("CALDAV_MAILBOX_PASS", "caldav-secret");
-    vi.stubEnv("CALDAV_NEXTCLOUD_URL", "https://cloud.example.com/remote.php/dav/calendars/miguel/");
+    vi.stubEnv(
+      "CALDAV_NEXTCLOUD_URL",
+      "https://cloud.example.com/remote.php/dav/calendars/miguel/",
+    );
     vi.stubEnv("CALDAV_NEXTCLOUD_USER", "miguel");
     vi.stubEnv("CALDAV_NEXTCLOUD_PASS", "nc-secret");
   });

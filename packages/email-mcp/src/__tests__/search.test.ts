@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "vitest";
-import { buildSearchCriteria, type SearchParams } from "../search.js";
+import { type SearchParams, buildSearchCriteria } from "../search.js";
 
 describe("buildSearchCriteria", () => {
   it("returns { all: true } for empty params", () => {
@@ -103,10 +103,7 @@ describe("buildSearchCriteria", () => {
     const result = buildSearchCriteria({ query: "budget" });
     assert(!Array.isArray(result));
     expect(result.or).toBeDefined();
-    expect(result.or).toEqual([
-      { subject: "budget" },
-      { body: "budget" },
-    ]);
+    expect(result.or).toEqual([{ subject: "budget" }, { body: "budget" }]);
   });
 
   it("handles query with -exclusion", () => {

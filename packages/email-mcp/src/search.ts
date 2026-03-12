@@ -23,9 +23,10 @@ export interface SearchParams {
 function parseTokens(value: string): string[] {
   const tokens: string[] = [];
   const regex = /"([^"]+)"|(\S+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(value)) !== null) {
+  let match: RegExpExecArray | null = regex.exec(value);
+  while (match !== null) {
     tokens.push(match[1] || match[2]);
+    match = regex.exec(value);
   }
   return tokens;
 }
