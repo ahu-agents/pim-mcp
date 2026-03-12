@@ -90,4 +90,29 @@ describe("htmlToMarkdown", () => {
     expect(result).toContain("A");
     expect(result).toContain("B");
   });
+
+  it("removes tracking pixels (width=1 height=1)", async () => {
+    const result = await htmlToMarkdown(
+      '<p>Content</p><img width="1" height="1" src="https://track.example.com/pixel.gif">',
+    );
+    expect(result).toContain("Content");
+    expect(result).not.toContain("track.example.com");
+    expect(result).not.toContain("pixel");
+  });
+
+  it("removes hidden preview text divs", async () => {
+    const result = await htmlToMarkdown(
+      '<div style="display:none;max-height:0;overflow:hidden">Preview text here</div><p>Real content</p>',
+    );
+    expect(result).not.toContain("Preview text here");
+    expect(result).toContain("Real content");
+  });
+
+  it("removes Google Calendar hidden spans", async () => {
+    const result = await htmlToMarkdown(
+      '<span style="display: none; font-size: 1px; color: #fff; line-height: 1px; height: 0; max-height: 0; width: 0; max-width: 0; opacity: 0; overflow: hidden;">Hidden gcal text</span><p>Visible</p>',
+    );
+    expect(result).not.toContain("Hidden gcal text");
+    expect(result).toContain("Visible");
+  });
 });
