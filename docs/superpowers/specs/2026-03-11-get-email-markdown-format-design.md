@@ -31,9 +31,8 @@ Allowed attributes: `href` on `<a>`, `src`/`alt`/`width`/`height`/`style` on `<i
 
 Strip rules:
 - `<style>`, `<script>`, MSO conditionals — not in allowlist, removed automatically.
-- Tracking pixels: `<img>` with `width <= 1` or `height <= 1`.
-- Hidden elements: any tag with style containing `display:none` combined with `height:0`, `max-height:0`, `overflow:hidden`, or `opacity:0` patterns.
-- Google Calendar hidden preview spans: `font-size:1px` + `height:0` combos.
+- Tracking pixels: `<img>` with `width <= 1` or `height <= 1` (via `exclusiveFilter`).
+- Hidden elements: implemented via `exclusiveFilter` — remove any element whose `style` attribute contains `display:none` or `display: none` combined with at least one of: `height:0`/`height: 0`, `max-height:0`/`max-height: 0`, `overflow:hidden`/`overflow: hidden`, or `opacity:0`/`opacity: 0`. This catches Google Calendar hidden preview spans (`font-size:1px` + `height:0` combos) and similar patterns from other email services.
 
 **Step 2 — Convert to markdown (`turndown`)**
 
@@ -48,6 +47,8 @@ Regex replace `![alt](url)` with `[Image: alt]`. Remove `![](url)` (no alt text)
 Extract all URLs from the markdown output. Fire concurrent `fetch(url, { method: "HEAD", redirect: "follow" })` requests with 5s timeout per URL. Replace original URLs with the final resolved `res.url`. On error or timeout, keep the original URL.
 
 No batching — experiments showed 36 concurrent requests complete in ~2s with no rate limiting from SparkPost/newsletter services. All URLs are followed regardless of domain (no heuristic needed to detect redirects).
+
+Requires Node 18+ for global `fetch` (the project already targets modern Node via ES modules and TypeScript 5.x).
 
 **Step 5 — Strip tracking params**
 
@@ -90,13 +91,17 @@ case "get_email": {
   const email = await imapService.fetchEmail(folder, uid);
 
   if (format === "markdown") {
-    if (email.htmlBody) {
-      email.markdownBody = await htmlToMarkdown(email.htmlBody);
-    } else if (email.textBody) {
-      email.markdownBody = email.textBody;
+    try {
+      if (email.htmlBody) {
+        email.markdownBody = await htmlToMarkdown(email.htmlBody);
+      } else if (email.textBody) {
+        email.markdownBody = email.textBody;
+      }
+      delete email.htmlBody;
+      delete email.textBody;
+    } catch {
+      // Conversion failed — fall back to returning raw bodies unchanged
     }
-    delete email.htmlBody;
-    delete email.textBody;
   } else if (format === "text") {
     delete email.htmlBody;
   } else if (format === "html") {
@@ -106,6 +111,16 @@ case "get_email": {
   return ok(JSON.stringify(email, null, 2));
 }
 ```
+
+### Output fields by format
+
+| `format` | Body fields returned |
+|----------|---------------------|
+| `"markdown"` (default) | `markdownBody` only (new field) |
+| `"text"` | `textBody` only (existing field) |
+| `"html"` | `htmlBody` only (existing field) |
+
+When `format: "markdown"` and the email has neither `htmlBody` nor `textBody`, no body field is returned. If the markdown conversion throws, the handler falls back to returning raw `htmlBody`/`textBody` unchanged.
 
 ## Interface Change
 
@@ -125,7 +140,7 @@ Exports a single async function:
 export async function htmlToMarkdown(html: string): Promise<string>
 ```
 
-Internally may also export `cleanUrl(url: string): string` for direct testing.
+Also exports `cleanUrl(url: string): string` for direct testing.
 
 ## Dependencies
 
@@ -158,14 +173,16 @@ Mock `global.fetch` to avoid real network calls.
 12. Collapses 3+ blank lines to 2
 13. Headings, lists, links convert correctly
 14. `cleanUrl` unit tests — each tracking param family stripped, non-tracking preserved, malformed URLs returned as-is
-15. Integration test with `docs/nyt-example.html` fixture — load file, mock fetch, verify output is clean and dramatically smaller
+15. Integration test with `docs/nyt-example.html` fixture — copy into `src/__tests__/__fixtures__/nyt-example.html`, load with `path.resolve(__dirname, "__fixtures__/nyt-example.html")`, mock fetch, verify output is clean and dramatically smaller
 
 ### `src/__tests__/emailTools.test.ts` (updates)
 
-1. Default format (no `format` arg) returns `markdownBody`, no `htmlBody`/`textBody`
-2. `format: "html"` returns `htmlBody`, no `textBody`
-3. `format: "text"` returns `textBody`, no `htmlBody`
-4. Text-only email with `format: "markdown"` returns `textBody` as `markdownBody`
+1. `get_email` schema includes `format` property with correct enum values
+2. Default format (no `format` arg) returns `markdownBody`, no `htmlBody`/`textBody`
+3. `format: "html"` returns `htmlBody`, no `textBody`
+4. `format: "text"` returns `textBody`, no `htmlBody`
+5. Text-only email with `format: "markdown"` returns `textBody` as `markdownBody`
+6. Conversion failure falls back to raw bodies unchanged
 
 ## Files Changed
 
@@ -177,7 +194,8 @@ Mock `global.fetch` to avoid real network calls.
 | `packages/email-mcp/src/tools/emailTools.ts` | Update schema, description, handler |
 | `packages/email-mcp/src/__tests__/htmlToMarkdown.test.ts` | New — unit + integration tests |
 | `packages/email-mcp/src/__tests__/emailTools.test.ts` | Add format parameter tests |
-| `docs/nyt-example.html` | Test fixture (already exists) |
+| `docs/nyt-example.html` | Source fixture (already exists) |
+| `packages/email-mcp/src/__tests__/__fixtures__/nyt-example.html` | Test fixture (copy from docs/) |
 
 ## Experimental Data
 
