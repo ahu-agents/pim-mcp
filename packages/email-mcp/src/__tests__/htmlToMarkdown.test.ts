@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanUrl, htmlToMarkdown } from "../htmlToMarkdown.js";
 
@@ -182,5 +184,30 @@ describe("htmlToMarkdown", () => {
     expect(result).toContain("eid=abc");
     expect(result).toContain("rst=1");
     expect(result).toContain("tok=xyz");
+  });
+
+  it("dramatically reduces NYT newsletter size", async () => {
+    const fixturePath = resolve(__dirname, "__fixtures__/nyt-example.html");
+    const html = readFileSync(fixturePath, "utf-8");
+
+    // Mock fetch: no redirects (just test sanitize+turndown+images)
+    mockFetch.mockImplementation(async (url: string) => ({ url }));
+
+    const result = await htmlToMarkdown(html);
+
+    // Original HTML is ~65KB, result should be significantly smaller
+    expect(result.length).toBeLessThan(html.length * 0.5);
+
+    // Should not contain CSS
+    expect(result).not.toMatch(/\{[^}]*color\s*:/);
+    expect(result).not.toMatch(/@media/);
+
+    // Should not contain HTML tags
+    expect(result).not.toContain("<style");
+    expect(result).not.toContain("<table");
+    expect(result).not.toContain("<td");
+
+    // Should contain readable content
+    expect(result.length).toBeGreaterThan(0);
   });
 });
