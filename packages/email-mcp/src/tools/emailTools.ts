@@ -1,5 +1,6 @@
 import { toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { htmlToMarkdown } from "../htmlToMarkdown.js";
 import type { SearchParams } from "../search.js";
 import type { ImapService } from "../services/ImapService.js";
 import type { SmtpService } from "../services/SmtpService.js";
@@ -84,7 +85,7 @@ export const EMAIL_TOOLS: Tool[] = [
   {
     name: "get_email",
     description:
-      "Fetch a full email by UID including headers, text/HTML body, and attachment metadata.",
+      "Fetch a full email by UID including headers, body, and attachment metadata. Returns body as markdown by default for token efficiency. Use format='html' or format='text' for raw content.",
     inputSchema: {
       type: "object",
       properties: {
@@ -95,6 +96,12 @@ export const EMAIL_TOOLS: Tool[] = [
         uid: {
           type: "number",
           description: "The UID of the email to fetch.",
+        },
+        format: {
+          type: "string",
+          enum: ["markdown", "html", "text"],
+          description:
+            "Body format to return. 'markdown' (default) converts HTML to clean markdown for token efficiency. 'html' returns raw HTML. 'text' returns plain text only.",
         },
       },
       required: ["uid"],
@@ -340,7 +347,27 @@ export async function handleEmailTool(
 
       case "get_email": {
         const uid = args.uid as number;
+        const format = (args.format as string) || "markdown";
         const email = await imapService.fetchEmail(folder, uid);
+
+        if (format === "markdown") {
+          try {
+            if (email.htmlBody) {
+              email.markdownBody = await htmlToMarkdown(email.htmlBody);
+            } else if (email.textBody) {
+              email.markdownBody = email.textBody;
+            }
+            delete email.htmlBody;
+            delete email.textBody;
+          } catch {
+            // Conversion failed — fall back to returning raw bodies unchanged
+          }
+        } else if (format === "text") {
+          delete email.htmlBody;
+        } else if (format === "html") {
+          delete email.textBody;
+        }
+
         return ok(JSON.stringify(email, null, 2));
       }
 
