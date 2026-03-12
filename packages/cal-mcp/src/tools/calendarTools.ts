@@ -1,7 +1,7 @@
 import { toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { generateEventIcs, parseIcsEvents } from "../ical.js";
-import type { CalDavService } from "../services/CalDavService.js";
+import type { CalDavService, EventSummary } from "../services/CalDavService.js";
 
 export const CALENDAR_TOOLS: Tool[] = [
   {
@@ -19,7 +19,8 @@ export const CALENDAR_TOOLS: Tool[] = [
       properties: {
         calendar: {
           type: "string",
-          description: "Provider-prefixed calendar ID (e.g., mailbox/Work). If omitted, queries all calendars.",
+          description:
+            "Provider-prefixed calendar ID (e.g., mailbox/Work). If omitted, queries all calendars.",
         },
         start: {
           type: "string",
@@ -40,8 +41,7 @@ export const CALENDAR_TOOLS: Tool[] = [
   },
   {
     name: "get_today_events",
-    description:
-      "Get all events for today. Convenience wrapper over list_events.",
+    description: "Get all events for today. Convenience wrapper over list_events.",
     inputSchema: {
       type: "object",
       properties: {
@@ -59,8 +59,7 @@ export const CALENDAR_TOOLS: Tool[] = [
   },
   {
     name: "search_events",
-    description:
-      "Keyword search across event title, description, and location.",
+    description: "Keyword search across event title, description, and location.",
     inputSchema: {
       type: "object",
       properties: {
@@ -290,7 +289,8 @@ export const CALENDAR_TOOLS: Tool[] = [
         calendars: {
           type: "array",
           items: { type: "string" },
-          description: "Provider-prefixed calendar IDs to check availability against. If omitted, uses all calendars.",
+          description:
+            "Provider-prefixed calendar IDs to check availability against. If omitted, uses all calendars.",
         },
         start: {
           type: "string",
@@ -361,14 +361,18 @@ export async function handleCalendarTool(
         const calendar = args.calendar as string | undefined;
         const detailLevel = (args.detail_level as string) ?? "summary";
 
-        let events;
+        let events: EventSummary[];
         if (calendar) {
           events = await service.listEvents(calendar, args.start as string, args.end as string);
         } else {
           const calendars = await service.listCalendars();
           events = [];
           for (const cal of calendars) {
-            const calEvents = await service.listEvents(cal.calendar_id, args.start as string, args.end as string);
+            const calEvents = await service.listEvents(
+              cal.calendar_id,
+              args.start as string,
+              args.end as string,
+            );
             events.push(...calEvents);
           }
         }
@@ -388,9 +392,16 @@ export async function handleCalendarTool(
         const detailLevel = (args.detail_level as string) ?? "summary";
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+        const todayEnd = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+          23,
+          59,
+          59,
+        ).toISOString();
 
-        let events;
+        let events: EventSummary[];
         if (calendar) {
           events = await service.listEvents(calendar, todayStart, todayEnd);
         } else {
@@ -417,10 +428,11 @@ export async function handleCalendarTool(
         const calendar = args.calendar as string | undefined;
         const detailLevel = (args.detail_level as string) ?? "summary";
         const now = new Date();
-        const start = (args.start as string) ?? new Date(now.getTime() - 90 * 86400000).toISOString();
+        const start =
+          (args.start as string) ?? new Date(now.getTime() - 90 * 86400000).toISOString();
         const end = (args.end as string) ?? new Date(now.getTime() + 90 * 86400000).toISOString();
 
-        let summaryEvents;
+        let summaryEvents: EventSummary[];
         if (calendar) {
           summaryEvents = await service.listEvents(calendar, start, end);
         } else {
@@ -480,7 +492,10 @@ export async function handleCalendarTool(
         const existing = await service.getEvent(args.calendar as string, args.uid as string);
 
         if (existing.is_recurring && (span === "this" || span === "future")) {
-          return error("not_implemented", "Recurring event instance modification is not yet supported");
+          return error(
+            "not_implemented",
+            "Recurring event instance modification is not yet supported",
+          );
         }
 
         const icsString = generateEventIcs({
@@ -497,7 +512,11 @@ export async function handleCalendarTool(
               name: a.name ?? undefined,
             })),
         });
-        const event = await service.updateEvent(args.calendar as string, args.uid as string, icsString);
+        const event = await service.updateEvent(
+          args.calendar as string,
+          args.uid as string,
+          icsString,
+        );
         return ok({ event });
       }
 
@@ -506,7 +525,10 @@ export async function handleCalendarTool(
         if (span === "this" || span === "future") {
           const existing = await service.getEvent(args.calendar as string, args.uid as string);
           if (existing.is_recurring) {
-            return error("not_implemented", "Recurring event instance deletion is not yet supported");
+            return error(
+              "not_implemented",
+              "Recurring event instance deletion is not yet supported",
+            );
           }
         }
         await service.deleteEvent(args.calendar as string, args.uid as string);
