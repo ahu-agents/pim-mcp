@@ -1,103 +1,137 @@
+export interface SearchParams {
+  query?: string;
+  body?: string;
+  from?: string;
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  subject?: string;
+  since?: string;
+  before?: string;
+  unread?: boolean;
+  flagged?: boolean;
+  hasAttachment?: boolean;
+  tags?: string[];
+}
+
 /**
- * Parses structured search query strings into imapflow-compatible search criteria.
- *
- * Supported prefixes:
- * - from:address     → IMAP FROM filter
- * - to:address       → IMAP TO filter
- * - subject:text     → IMAP SUBJECT filter
- * - is:unread/read/flagged → flag filters
- * - has:attachment    → Content-Type header check
- * - since:YYYY-MM-DD → date range start
- * - before:YYYY-MM-DD → date range end
- * - plain text        → IMAP BODY search
+ * Parse a string value into tokens, respecting quoted phrases.
+ * "dinner movie" → ["dinner", "movie"]
+ * '"dinner movie"' → ["dinner movie"]
+ * 'hello "exact phrase" world' → ["hello", "exact phrase", "world"]
  */
-export function parseSearchQuery(query: string): Record<string, unknown> {
-  const trimmed = query.trim();
-  if (!trimmed) return {};
+function parseTokens(value: string): string[] {
+  const tokens: string[] = [];
+  const regex = /"([^"]+)"|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(value)) !== null) {
+    tokens.push(match[1] || match[2]);
+  }
+  return tokens;
+}
 
-  const criteria: Record<string, unknown> = {};
-  const plainParts: string[] = [];
+/**
+ * Build imapflow-compatible search criteria from structured params.
+ * All params combine with AND logic.
+ * Returns a plain object when all keys are unique, or an array of criteria
+ * objects when there are duplicate keys (imapflow ANDs array elements).
+ */
+export function buildSearchCriteria(
+  params: SearchParams,
+): Record<string, unknown> | Record<string, unknown>[] {
+  const criteria: Record<string, unknown>[] = [];
 
-  const tokens = trimmed.split(/\s+/);
-  let i = 0;
-
-  while (i < tokens.length) {
-    const token = tokens[i];
-    const colonIndex = token.indexOf(":");
-
-    if (colonIndex > 0) {
-      const prefix = token.substring(0, colonIndex).toLowerCase();
-      const value = token.substring(colonIndex + 1);
-
-      switch (prefix) {
-        case "from":
-          criteria.from = value;
-          i++;
-          break;
-        case "to":
-          criteria.to = value;
-          i++;
-          break;
-        case "subject": {
-          const subjectParts = [value];
-          i++;
-          while (i < tokens.length && !isPrefix(tokens[i])) {
-            subjectParts.push(tokens[i]);
-            i++;
-          }
-          criteria.subject = subjectParts.join(" ");
-          break;
-        }
-        case "is":
-          switch (value.toLowerCase()) {
-            case "unread":
-              criteria.seen = false;
-              break;
-            case "read":
-              criteria.seen = true;
-              break;
-            case "flagged":
-              criteria.flagged = true;
-              break;
-          }
-          i++;
-          break;
-        case "has":
-          if (value.toLowerCase() === "attachment") {
-            criteria.header = { "content-type": "multipart/mixed" };
-          }
-          i++;
-          break;
-        case "since":
-          criteria.since = new Date(value);
-          i++;
-          break;
-        case "before":
-          criteria.before = new Date(value);
-          i++;
-          break;
-        default:
-          plainParts.push(token);
-          i++;
-          break;
-      }
-    } else {
-      plainParts.push(token);
-      i++;
+  // Simple string fields → IMAP search keys
+  const stringFields = ["from", "to", "cc", "bcc", "subject", "body"] as const;
+  for (const field of stringFields) {
+    const value = params[field];
+    if (value === undefined) continue;
+    const tokens = parseTokens(value);
+    for (const token of tokens) {
+      criteria.push({ [field]: token });
     }
   }
 
-  if (plainParts.length > 0) {
-    criteria.body = plainParts.join(" ");
+  // query → OR(subject, body) for each positive term, NOT(body) for -terms
+  if (params.query !== undefined) {
+    const tokens = parseTokens(params.query);
+    const positive: string[] = [];
+    const negative: string[] = [];
+    for (const token of tokens) {
+      if (token.startsWith("-") && token.length > 1) {
+        negative.push(token.slice(1));
+      } else {
+        positive.push(token);
+      }
+    }
+    for (const term of positive) {
+      criteria.push({ or: [{ subject: term }, { body: term }] });
+    }
+    for (const term of negative) {
+      criteria.push({ not: { body: term } });
+    }
   }
 
-  return criteria;
-}
+  // Date filters
+  if (params.since !== undefined) {
+    criteria.push({ since: new Date(params.since) });
+  }
+  if (params.before !== undefined) {
+    criteria.push({ before: new Date(params.before) });
+  }
 
-const KNOWN_PREFIXES = new Set(["from", "to", "subject", "is", "has", "since", "before"]);
+  // Boolean flags
+  if (params.unread !== undefined) {
+    criteria.push({ seen: !params.unread });
+  }
+  if (params.flagged !== undefined) {
+    criteria.push({ flagged: params.flagged });
+  }
 
-function isPrefix(token: string): boolean {
-  const colonIndex = token.indexOf(":");
-  if (colonIndex <= 0) return false;
-  return KNOWN_PREFIXES.has(token.substring(0, colonIndex).toLowerCase());
+  // Attachment filter
+  if (params.hasAttachment === true) {
+    criteria.push({ header: { "content-type": "multipart/mixed" } });
+  }
+
+  // Tags (IMAP keywords)
+  if (params.tags !== undefined) {
+    for (const tag of params.tags) {
+      criteria.push({ keyword: tag });
+    }
+  }
+
+  // No criteria → match all
+  if (criteria.length === 0) {
+    return { all: true };
+  }
+
+  // Single criterion → return directly
+  if (criteria.length === 1) {
+    return criteria[0];
+  }
+
+  // Multiple criteria → try to merge into a flat object (imapflow ANDs top-level keys).
+  // If any key appears more than once, return the array instead — imapflow ANDs array elements.
+  const seenKeys = new Set<string>();
+  let hasDuplicateKey = false;
+  for (const c of criteria) {
+    for (const key of Object.keys(c)) {
+      if (seenKeys.has(key)) {
+        hasDuplicateKey = true;
+        break;
+      }
+      seenKeys.add(key);
+    }
+    if (hasDuplicateKey) break;
+  }
+
+  if (hasDuplicateKey) {
+    return criteria;
+  }
+
+  const merged: Record<string, unknown> = {};
+  for (const c of criteria) {
+    Object.assign(merged, c);
+  }
+  return merged;
 }

@@ -165,6 +165,128 @@ describe("ImapService", () => {
       expect(results[0].uid).toBe(101);
       expect(results[0].subject).toBe("First");
       expect(results[0].flags).toContain("\\Seen");
+      expect(results[1].uid).toBe(102);
+      expect(results[1].subject).toBe("Second");
+    });
+
+    it("returns results sorted by date descending", async () => {
+      mockSearch.mockResolvedValueOnce([101, 102, 103]);
+
+      const messages = [
+        {
+          uid: 101,
+          envelope: {
+            messageId: "<msg-101@test.com>",
+            subject: "Old",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-01"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "Newest",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "d@test.com", name: "D" }],
+            date: new Date("2026-03-10"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 103,
+          envelope: {
+            messageId: "<msg-103@test.com>",
+            subject: "Middle",
+            from: [{ address: "e@test.com", name: "E" }],
+            to: [{ address: "f@test.com", name: "F" }],
+            date: new Date("2026-03-05"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 10 });
+      expect(results[0].subject).toBe("Newest");
+      expect(results[1].subject).toBe("Middle");
+      expect(results[2].subject).toBe("Old");
+    });
+
+    it("passes search criteria from SearchParams to IMAP", async () => {
+      mockSearch.mockResolvedValueOnce([]);
+
+      await service.searchEmails("INBOX", { from: "boss@work.com", unread: true });
+      expect(mockSearch).toHaveBeenCalledWith(
+        { from: "boss@work.com", seen: false },
+        { uid: true },
+      );
+    });
+
+    it("Tier 3: fetches only the paginated slice when >1000 UIDs are returned", async () => {
+      // Generate 1500 ascending UIDs: [1, 2, ..., 1500]
+      const allUids = Array.from({ length: 1500 }, (_, i) => i + 1);
+      mockSearch.mockResolvedValueOnce(allUids);
+
+      // After reversing: [1500, 1499, ..., 1]
+      // With offset=0, limit=2 the slice is [1500, 1499]
+      // fetchSummaries is called with those two UIDs
+      const fetchedMessages = [
+        {
+          uid: 1500,
+          envelope: {
+            messageId: "<msg-1500@test.com>",
+            subject: "Older",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-05"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 1499,
+          envelope: {
+            messageId: "<msg-1499@test.com>",
+            subject: "Newest",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "d@test.com", name: "D" }],
+            date: new Date("2026-03-10"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of fetchedMessages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 2, offset: 0 });
+
+      // Only 2 messages fetched, not all 1500
+      expect(results).toHaveLength(2);
+
+      // fetch was called with only the sliced UIDs, not all 1500
+      expect(mockFetch).toHaveBeenCalledWith(
+        "1500,1499",
+        expect.objectContaining({ envelope: true, uid: true }),
+        { uid: true },
+      );
+
+      // Results sorted by date descending
+      expect(results[0].subject).toBe("Newest");
+      expect(results[1].subject).toBe("Older");
     });
   });
 

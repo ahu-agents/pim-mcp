@@ -1,6 +1,6 @@
 {
   "name": "@miguelarios/email-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for email via IMAP/SMTP — read, search, send, and manage emails",
   "keywords": ["mcp", "email", "imap", "smtp", "mailbox"],
   "license": "MIT",
@@ -17,7 +17,7 @@
     "email-mcp": "dist/bin/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/bin/cli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "biome check .",

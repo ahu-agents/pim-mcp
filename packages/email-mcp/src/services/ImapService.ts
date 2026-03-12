@@ -1,6 +1,7 @@
 import { type EmailConfig, EmailError, ErrorCode, toPimError } from "@miguelarios/pim-core";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
+import { buildSearchCriteria, type SearchParams } from "../search.js";
 
 export interface EmailSummary {
   uid: number;
@@ -82,56 +83,35 @@ export class ImapService {
 
   async searchEmails(
     folder: string,
-    query: Record<string, unknown>,
+    params: SearchParams = {},
     options: SearchOptions = {},
   ): Promise<EmailSummary[]> {
     const client = this.createClient();
+    const criteria = buildSearchCriteria(params);
     try {
       await client.connect();
       const lock = await client.getMailboxLock(folder);
       try {
-        const searchCriteria = Object.keys(query).length > 0 ? query : { all: true };
-        const searchResult = await client.search(searchCriteria as any, {
-          uid: true,
-        });
+        const searchResult = await client.search(criteria as any, { uid: true });
         const uids = searchResult || [];
 
         if (uids.length === 0) return [];
 
         const offset = options.offset ?? 0;
         const limit = options.limit ?? 50;
-        const sliced = uids.slice(offset, offset + limit);
 
-        const summaries: EmailSummary[] = [];
-        const uidRange = sliced.join(",");
-
-        for await (const msg of client.fetch(uidRange, {
-          envelope: true,
-          flags: true,
-          bodyStructure: true,
-          uid: true,
-        })) {
-          const envelope = msg.envelope!;
-          summaries.push({
-            uid: msg.uid,
-            messageId: envelope.messageId || "",
-            subject: envelope.subject || "",
-            from: envelope.from?.[0]
-              ? {
-                  name: envelope.from[0].name,
-                  address: envelope.from[0].address || "",
-                }
-              : { address: "unknown" },
-            to: (envelope.to || []).map((a: any) => ({
-              name: a.name,
-              address: a.address || "",
-            })),
-            date: envelope.date?.toISOString() || "",
-            flags: [...(msg.flags || [])],
-            hasAttachments: hasAttachmentParts(msg.bodyStructure),
-          });
+        if (uids.length <= 1000) {
+          // Tier 2: fetch all envelopes, sort by date, paginate
+          const allSummaries = await this.fetchSummaries(client, uids);
+          allSummaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          return allSummaries.slice(offset, offset + limit);
+        } else {
+          // Tier 3: reverse UIDs, slice, fetch, sort slice
+          uids.reverse();
+          const fetchUids = uids.slice(offset, offset + limit);
+          const summaries = await this.fetchSummaries(client, fetchUids);
+          return summaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         }
-        return summaries;
       } finally {
         lock.release();
       }
@@ -140,6 +120,43 @@ export class ImapService {
     } finally {
       await client.logout().catch(() => {});
     }
+  }
+
+  private async fetchSummaries(client: ImapFlow, uids: number[]): Promise<EmailSummary[]> {
+    const summaries: EmailSummary[] = [];
+    const uidRange = uids.join(",");
+
+    for await (const msg of client.fetch(
+      uidRange,
+      {
+        envelope: true,
+        flags: true,
+        bodyStructure: true,
+        uid: true,
+      },
+      { uid: true },
+    )) {
+      const envelope = msg.envelope!;
+      summaries.push({
+        uid: msg.uid,
+        messageId: envelope.messageId || "",
+        subject: envelope.subject || "",
+        from: envelope.from?.[0]
+          ? {
+              name: envelope.from[0].name,
+              address: envelope.from[0].address || "",
+            }
+          : { address: "unknown" },
+        to: (envelope.to || []).map((a: any) => ({
+          name: a.name,
+          address: a.address || "",
+        })),
+        date: envelope.date?.toISOString() || "",
+        flags: [...(msg.flags || [])],
+        hasAttachments: hasAttachmentParts(msg.bodyStructure),
+      });
+    }
+    return summaries;
   }
 
   async fetchEmail(folder: string, uid: number): Promise<EmailFull> {

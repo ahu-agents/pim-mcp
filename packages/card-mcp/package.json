@@ -1,6 +1,6 @@
 {
   "name": "@miguelarios/card-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for contacts via CardDAV — CRUD contacts, search, resolve names to emails",
   "keywords": ["mcp", "contacts", "carddav", "vcard"],
   "license": "MIT",
@@ -17,7 +17,7 @@
     "card-mcp": "dist/bin/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/bin/cli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start": "node dist/bin/cli.js"

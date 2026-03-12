@@ -1,79 +1,130 @@
-import { describe, expect, it } from "vitest";
-import { parseSearchQuery } from "../search.js";
+import { assert, describe, expect, it } from "vitest";
+import { buildSearchCriteria, type SearchParams } from "../search.js";
 
-describe("parseSearchQuery", () => {
-  it("parses from: prefix", () => {
-    const result = parseSearchQuery("from:boss@work.com");
-    expect(result).toEqual({ from: "boss@work.com" });
+describe("buildSearchCriteria", () => {
+  it("returns { all: true } for empty params", () => {
+    expect(buildSearchCriteria({})).toEqual({ all: true });
   });
 
-  it("parses to: prefix", () => {
-    const result = parseSearchQuery("to:someone@test.com");
-    expect(result).toEqual({ to: "someone@test.com" });
+  it("maps from param to IMAP from", () => {
+    expect(buildSearchCriteria({ from: "boss@work.com" })).toEqual({
+      from: "boss@work.com",
+    });
   });
 
-  it("parses subject: prefix", () => {
-    const result = parseSearchQuery("subject:meeting notes");
-    expect(result).toEqual({ subject: "meeting notes" });
+  it("maps to param to IMAP to", () => {
+    expect(buildSearchCriteria({ to: "team@work.com" })).toEqual({
+      to: "team@work.com",
+    });
   });
 
-  it("parses is:unread flag", () => {
-    const result = parseSearchQuery("is:unread");
-    expect(result).toEqual({ seen: false });
+  it("maps cc param", () => {
+    expect(buildSearchCriteria({ cc: "manager@work.com" })).toEqual({
+      cc: "manager@work.com",
+    });
   });
 
-  it("parses is:read flag", () => {
-    const result = parseSearchQuery("is:read");
-    expect(result).toEqual({ seen: true });
+  it("maps bcc param", () => {
+    expect(buildSearchCriteria({ bcc: "secret@work.com" })).toEqual({
+      bcc: "secret@work.com",
+    });
   });
 
-  it("parses is:flagged flag", () => {
-    const result = parseSearchQuery("is:flagged");
-    expect(result).toEqual({ flagged: true });
+  it("maps subject param", () => {
+    expect(buildSearchCriteria({ subject: "meeting" })).toEqual({
+      subject: "meeting",
+    });
   });
 
-  it("parses has:attachment", () => {
-    const result = parseSearchQuery("has:attachment");
-    expect(result).toEqual({
+  it("maps body param", () => {
+    expect(buildSearchCriteria({ body: "report" })).toEqual({
+      body: "report",
+    });
+  });
+
+  it("maps since param to Date", () => {
+    const result = buildSearchCriteria({ since: "2026-03-01" });
+    assert(!Array.isArray(result));
+    expect(result.since).toEqual(new Date("2026-03-01"));
+  });
+
+  it("maps before param to Date", () => {
+    const result = buildSearchCriteria({ before: "2026-03-10" });
+    assert(!Array.isArray(result));
+    expect(result.before).toEqual(new Date("2026-03-10"));
+  });
+
+  it("maps unread: true to seen: false", () => {
+    expect(buildSearchCriteria({ unread: true })).toEqual({ seen: false });
+  });
+
+  it("maps unread: false to seen: true", () => {
+    expect(buildSearchCriteria({ unread: false })).toEqual({ seen: true });
+  });
+
+  it("maps flagged: true", () => {
+    expect(buildSearchCriteria({ flagged: true })).toEqual({ flagged: true });
+  });
+
+  it("maps flagged: false", () => {
+    expect(buildSearchCriteria({ flagged: false })).toEqual({ flagged: false });
+  });
+
+  it("maps hasAttachment to content-type header check", () => {
+    expect(buildSearchCriteria({ hasAttachment: true })).toEqual({
       header: { "content-type": "multipart/mixed" },
     });
   });
 
-  it("parses since: date filter", () => {
-    const result = parseSearchQuery("since:2026-01-15");
-    expect(result).toEqual({ since: new Date("2026-01-15") });
-  });
-
-  it("parses before: date filter", () => {
-    const result = parseSearchQuery("before:2026-03-01");
-    expect(result).toEqual({ before: new Date("2026-03-01") });
-  });
-
-  it("treats plain text as body/subject search", () => {
-    const result = parseSearchQuery("important project");
-    expect(result).toEqual({ body: "important project" });
-  });
-
-  it("combines multiple prefixes", () => {
-    const result = parseSearchQuery("from:boss@work.com is:unread");
-    expect(result).toEqual({ from: "boss@work.com", seen: false });
-  });
-
-  it("combines prefix with plain text", () => {
-    const result = parseSearchQuery("from:boss@work.com urgent deadline");
-    expect(result).toEqual({
-      from: "boss@work.com",
-      body: "urgent deadline",
+  it("maps single tag to keyword", () => {
+    expect(buildSearchCriteria({ tags: ["work"] })).toEqual({
+      keyword: "work",
     });
   });
 
-  it("returns empty object for empty query", () => {
-    const result = parseSearchQuery("");
-    expect(result).toEqual({});
+  it("maps multiple tags to ANDed keywords", () => {
+    const result = buildSearchCriteria({ tags: ["work", "urgent"] });
+    // Duplicate keys require array form so both tags are preserved
+    expect(result).toEqual([{ keyword: "work" }, { keyword: "urgent" }]);
   });
 
-  it("returns empty object for whitespace-only query", () => {
-    const result = parseSearchQuery("   ");
-    expect(result).toEqual({});
+  it("splits unquoted subject into ANDed criteria", () => {
+    const result = buildSearchCriteria({ subject: "dinner movie" });
+    // Duplicate keys require array form so both words are preserved
+    expect(result).toEqual([{ subject: "dinner" }, { subject: "movie" }]);
+  });
+
+  it("preserves quoted subject as exact phrase", () => {
+    const result = buildSearchCriteria({ subject: '"dinner movie"' });
+    expect(result).toEqual({ subject: "dinner movie" });
+  });
+
+  it("maps query to OR of subject and body", () => {
+    const result = buildSearchCriteria({ query: "budget" });
+    assert(!Array.isArray(result));
+    expect(result.or).toBeDefined();
+    expect(result.or).toEqual([
+      { subject: "budget" },
+      { body: "budget" },
+    ]);
+  });
+
+  it("handles query with -exclusion", () => {
+    const result = buildSearchCriteria({ query: "dinner -movie" });
+    assert(!Array.isArray(result));
+    expect(result.or).toBeDefined();
+    expect(result.not).toBeDefined();
+  });
+
+  it("combines multiple params with AND", () => {
+    const result = buildSearchCriteria({
+      from: "boss@work.com",
+      unread: true,
+      since: "2026-03-01",
+    });
+    assert(!Array.isArray(result));
+    expect(result.from).toBe("boss@work.com");
+    expect(result.seen).toBe(false);
+    expect(result.since).toEqual(new Date("2026-03-01"));
   });
 });
