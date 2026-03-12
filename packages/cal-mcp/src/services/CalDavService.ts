@@ -9,32 +9,36 @@ import { DAVClient } from "tsdav";
 import { type ParsedEvent, parseIcsEvents } from "../ical.js";
 
 export interface CalendarInfo {
-  calendarId: string;
-  displayName: string;
+  calendar_id: string;
+  display_name: string;
+  color: string | null;
+  source: string;
+  read_only: boolean;
   url: string;
   ctag?: string;
-  providerId: string;
 }
 
 export interface EventSummary {
   uid: string;
-  calendarId: string;
-  summary: string;
+  calendar_id: string;
+  title: string;
   start: string;
   end: string;
-  location?: string;
-  status?: string;
-  isRecurring: boolean;
+  all_day: boolean;
+  location: string | null;
+  status: string | null;
+  is_recurring: boolean;
 }
 
 export interface EventFull extends EventSummary {
-  description?: string;
-  attendees?: Array<{ name?: string; email: string; status?: string }>;
-  organizer?: { name?: string; email: string };
-  recurrenceRule?: string;
-  transparency?: string;
-  created?: string;
-  lastModified?: string;
+  description: string | null;
+  url: string | null;
+  availability: string | null;
+  attendees: Array<{ name: string | null; email: string; status: string | null; role: string | null }>;
+  organizer: { name: string | null; email: string } | null;
+  recurrence_rule: string | null;
+  created: string | null;
+  last_modified: string | null;
 }
 
 export interface FreeSlot {
@@ -45,8 +49,10 @@ export interface FreeSlot {
 
 export interface FindFreeSlotsOptions {
   ignoreTentative?: boolean;
-  preferredStart?: string; // "HH:MM"
-  preferredEnd?: string; // "HH:MM"
+  preferredStart?: string;
+  preferredEnd?: string;
+  excludeCalendars?: string[];
+  includeAllDayAsBusy?: boolean;
 }
 
 export class CalDavService {
@@ -133,11 +139,13 @@ export class CalDavService {
         for (const cal of calendars) {
           const displayName = (typeof cal.displayName === "string" ? cal.displayName : "") || "";
           allCalendars.push({
-            calendarId: `${providerId}/${displayName}`,
-            displayName,
+            calendar_id: `${providerId}/${displayName}`,
+            display_name: displayName,
+            color: (cal as any).calendarColor ?? null,
+            source: providerId,
+            read_only: false,
             url: cal.url,
             ctag: cal.ctag,
-            providerId,
           });
         }
       } catch (error) {
@@ -169,13 +177,14 @@ export class CalDavService {
         for (const event of parsed) {
           summaries.push({
             uid: event.uid,
-            calendarId,
-            summary: event.summary,
+            calendar_id: calendarId,
+            title: event.title,
             start: event.start,
             end: event.end,
+            all_day: event.all_day,
             location: event.location,
             status: event.status,
-            isRecurring: !!event.recurrenceRule,
+            is_recurring: event.is_recurring,
           });
         }
       }
@@ -203,20 +212,22 @@ export class CalDavService {
 
       return {
         uid: event.uid,
-        calendarId,
-        summary: event.summary,
+        calendar_id: calendarId,
+        title: event.title,
         start: event.start,
         end: event.end,
+        all_day: event.all_day,
         location: event.location,
         status: event.status,
-        isRecurring: !!event.recurrenceRule,
+        is_recurring: event.is_recurring,
         description: event.description,
+        url: event.url,
+        availability: event.availability,
         attendees: event.attendees,
         organizer: event.organizer,
-        recurrenceRule: event.recurrenceRule,
-        transparency: event.transparency,
+        recurrence_rule: event.recurrence_rule,
         created: event.created,
-        lastModified: event.lastModified,
+        last_modified: event.last_modified,
       };
     } catch (error) {
       if (error instanceof CalendarError) throw error;
@@ -224,7 +235,7 @@ export class CalDavService {
     }
   }
 
-  async createEvent(calendarId: string, icalString: string): Promise<void> {
+  async createEvent(calendarId: string, icalString: string, uid: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
     const client = this.createClient(account);
 
@@ -234,15 +245,16 @@ export class CalDavService {
       await client.createCalendarObject({
         calendar,
         iCalString: icalString,
-        filename: `${crypto.randomUUID()}.ics`,
+        filename: `${uid}.ics`,
       });
+      return await this.getEvent(calendarId, uid);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
-  async updateEvent(calendarId: string, uid: string, icalString: string): Promise<void> {
+  async updateEvent(calendarId: string, uid: string, icalString: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
     const client = this.createClient(account);
 
@@ -257,6 +269,7 @@ export class CalDavService {
           data: icalString,
         },
       });
+      return await this.getEvent(calendarId, uid);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
@@ -294,11 +307,16 @@ export class CalDavService {
     const allEvents: Array<{
       start: string;
       end: string;
-      status?: string;
-      transparency?: string;
+      status: string | null;
+      availability: string | null;
+      all_day: boolean;
+      calendar_id: string;
     }> = [];
 
     for (const calendarId of calendarIds) {
+      // Skip excluded calendars
+      if (options.excludeCalendars?.includes(calendarId)) continue;
+
       try {
         const { account, calendarName } = this.resolveAccount(calendarId);
         const client = this.createClient(account);
@@ -318,7 +336,9 @@ export class CalDavService {
               start: event.start,
               end: event.end,
               status: event.status,
-              transparency: event.transparency,
+              availability: event.availability,
+              all_day: event.all_day,
+              calendar_id: calendarId,
             });
           }
         }
@@ -328,10 +348,15 @@ export class CalDavService {
       }
     }
 
-    // 2. Filter events — skip transparent and optionally tentative
+    // 2. Filter events — skip free, all-day (unless opted in), and optionally tentative
     const busyIntervals = allEvents.filter((e) => {
-      if (e.transparency === "TRANSPARENT") return false;
-      if (options.ignoreTentative && e.status === "TENTATIVE") return false;
+      // Skip all-day events unless includeAllDayAsBusy
+      if (e.all_day && !options.includeAllDayAsBusy) return false;
+      // Skip free events
+      if (e.availability === "free") return false;
+      // Skip tentative when ignoreTentative
+      if (options.ignoreTentative && e.status === "tentative") return false;
+      // Everything else blocks
       return true;
     });
 
@@ -422,26 +447,26 @@ export class CalDavService {
         boundaries.sort((a, b) => a - b);
 
         // Split the slot at boundaries
-        let cursor = slotStart.getTime();
+        let splitCursor = slotStart.getTime();
         for (const boundary of boundaries) {
-          if (boundary > cursor) {
-            const dur = Math.round((boundary - cursor) / 60000);
+          if (boundary > splitCursor) {
+            const dur = Math.round((boundary - splitCursor) / 60000);
             if (dur >= durationMinutes) {
               splitSlots.push({
-                start: new Date(cursor).toISOString(),
+                start: new Date(splitCursor).toISOString(),
                 end: new Date(boundary).toISOString(),
                 duration: dur,
               });
             }
-            cursor = boundary;
+            splitCursor = boundary;
           }
         }
         // Remainder
-        if (slotEnd.getTime() > cursor) {
-          const dur = Math.round((slotEnd.getTime() - cursor) / 60000);
+        if (slotEnd.getTime() > splitCursor) {
+          const dur = Math.round((slotEnd.getTime() - splitCursor) / 60000);
           if (dur >= durationMinutes) {
             splitSlots.push({
-              start: new Date(cursor).toISOString(),
+              start: new Date(splitCursor).toISOString(),
               end: new Date(slotEnd.getTime()).toISOString(),
               duration: dur,
             });

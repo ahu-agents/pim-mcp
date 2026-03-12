@@ -12,13 +12,14 @@ export const CALENDAR_TOOLS: Tool[] = [
   },
   {
     name: "list_events",
-    description: "Query events in a calendar by date range. Expands recurring events.",
+    description:
+      "Query events in a date range. Recurring events are expanded into individual instances.",
     inputSchema: {
       type: "object",
       properties: {
         calendar: {
           type: "string",
-          description: "Provider-prefixed calendar ID (e.g., mailbox/Work)",
+          description: "Provider-prefixed calendar ID (e.g., mailbox/Work). If omitted, queries all calendars.",
         },
         start: {
           type: "string",
@@ -28,8 +29,64 @@ export const CALENDAR_TOOLS: Tool[] = [
           type: "string",
           description: "End of date range (ISO 8601)",
         },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "full"],
+          description: "Response verbosity (default: summary)",
+        },
       },
-      required: ["calendar", "start", "end"],
+      required: ["start", "end"],
+    },
+  },
+  {
+    name: "get_today_events",
+    description:
+      "Get all events for today. Convenience wrapper over list_events.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        calendar: {
+          type: "string",
+          description: "Provider-prefixed calendar ID. If omitted, queries all calendars.",
+        },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "full"],
+          description: "Response verbosity (default: summary)",
+        },
+      },
+    },
+  },
+  {
+    name: "search_events",
+    description:
+      "Keyword search across event title, description, and location.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search term",
+        },
+        calendar: {
+          type: "string",
+          description: "Provider-prefixed calendar ID. If omitted, searches all calendars.",
+        },
+        start: {
+          type: "string",
+          description: "Range start (ISO 8601). Defaults to 90 days ago.",
+        },
+        end: {
+          type: "string",
+          description: "Range end (ISO 8601). Defaults to 90 days ahead.",
+        },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "full"],
+          description: "Response verbosity (default: summary)",
+        },
+      },
+      required: ["query"],
     },
   },
   {
@@ -57,12 +114,16 @@ export const CALENDAR_TOOLS: Tool[] = [
           type: "string",
           description: "Provider-prefixed calendar ID",
         },
-        summary: { type: "string", description: "Event title" },
+        title: { type: "string", description: "Event title" },
         start: {
           type: "string",
           description: "Start time (ISO 8601)",
         },
         end: { type: "string", description: "End time (ISO 8601)" },
+        all_day: {
+          type: "boolean",
+          description: "All-day event flag (default: false)",
+        },
         location: { type: "string", description: "Event location" },
         description: {
           type: "string",
@@ -81,7 +142,7 @@ export const CALENDAR_TOOLS: Tool[] = [
           description: "List of attendees",
         },
       },
-      required: ["calendar", "summary", "start", "end"],
+      required: ["calendar", "title", "start", "end"],
     },
   },
   {
@@ -98,7 +159,7 @@ export const CALENDAR_TOOLS: Tool[] = [
           type: "string",
           description: "Event UID to update",
         },
-        summary: { type: "string", description: "New event title" },
+        title: { type: "string", description: "New event title" },
         start: {
           type: "string",
           description: "New start time (ISO 8601)",
@@ -106,6 +167,10 @@ export const CALENDAR_TOOLS: Tool[] = [
         end: {
           type: "string",
           description: "New end time (ISO 8601)",
+        },
+        all_day: {
+          type: "boolean",
+          description: "All-day event flag",
         },
         location: { type: "string", description: "New location" },
         description: {
@@ -124,6 +189,11 @@ export const CALENDAR_TOOLS: Tool[] = [
           },
           description: "New attendee list (replaces existing)",
         },
+        span: {
+          type: "string",
+          enum: ["this", "future", "all"],
+          description: "Recurring event scope (default: this)",
+        },
       },
       required: ["calendar", "uid"],
     },
@@ -141,6 +211,11 @@ export const CALENDAR_TOOLS: Tool[] = [
         uid: {
           type: "string",
           description: "Event UID to delete",
+        },
+        span: {
+          type: "string",
+          enum: ["this", "future", "all"],
+          description: "Recurring event scope (default: all)",
         },
       },
       required: ["calendar", "uid"],
@@ -161,13 +236,25 @@ export const CALENDAR_TOOLS: Tool[] = [
           items: {
             type: "object",
             properties: {
-              summary: { type: "string" },
+              title: { type: "string" },
               start: { type: "string" },
               end: { type: "string" },
+              all_day: { type: "boolean" },
               location: { type: "string" },
               description: { type: "string" },
+              attendees: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    email: { type: "string" },
+                    name: { type: "string" },
+                  },
+                  required: ["email"],
+                },
+              },
             },
-            required: ["summary", "start", "end"],
+            required: ["title", "start", "end"],
           },
           description: "Array of events to create",
         },
@@ -185,12 +272,12 @@ export const CALENDAR_TOOLS: Tool[] = [
           type: "string",
           description: "Provider-prefixed calendar ID",
         },
-        icsContent: {
+        ics_content: {
           type: "string",
           description: "Raw iCalendar content string",
         },
       },
-      required: ["calendar", "icsContent"],
+      required: ["calendar", "ics_content"],
     },
   },
   {
@@ -203,7 +290,7 @@ export const CALENDAR_TOOLS: Tool[] = [
         calendars: {
           type: "array",
           items: { type: "string" },
-          description: "Provider-prefixed calendar IDs to check availability against",
+          description: "Provider-prefixed calendar IDs to check availability against. If omitted, uses all calendars.",
         },
         start: {
           type: "string",
@@ -217,23 +304,43 @@ export const CALENDAR_TOOLS: Tool[] = [
           type: "number",
           description: "Minimum slot duration in minutes",
         },
-        preferredStart: {
+        preferred_start: {
           type: "string",
           description: "Preferred earliest time (HH:MM, e.g., 08:00)",
         },
-        preferredEnd: {
+        preferred_end: {
           type: "string",
           description: "Preferred latest time (HH:MM, e.g., 17:00)",
+        },
+        exclude_calendars: {
+          type: "array",
+          items: { type: "string" },
+          description: "Calendar IDs to exclude from busy time calculation",
+        },
+        include_all_day_as_busy: {
+          type: "boolean",
+          description: "Treat all-day events as busy (default: false)",
         },
         ignore_tentative: {
           type: "boolean",
           description: "If true, tentative events don't block slots (default: false)",
         },
       },
-      required: ["calendars", "start", "end", "duration"],
+      required: ["start", "end", "duration"],
     },
   },
 ];
+
+function ok(payload: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
+}
+
+function error(code: string, message: string) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify({ error: code, message }) }],
+    isError: true,
+  };
+}
 
 export async function handleCalendarTool(
   name: string,
@@ -247,112 +354,238 @@ export async function handleCalendarTool(
     switch (name) {
       case "list_calendars": {
         const calendars = await service.listCalendars();
-        return ok(JSON.stringify(calendars, null, 2));
+        return ok({ calendars });
       }
 
       case "list_events": {
-        const events = await service.listEvents(
-          args.calendar as string,
-          args.start as string,
-          args.end as string,
-        );
-        return ok(JSON.stringify(events, null, 2));
+        const calendar = args.calendar as string | undefined;
+        const detailLevel = (args.detail_level as string) ?? "summary";
+
+        let events;
+        if (calendar) {
+          events = await service.listEvents(calendar, args.start as string, args.end as string);
+        } else {
+          const calendars = await service.listCalendars();
+          events = [];
+          for (const cal of calendars) {
+            const calEvents = await service.listEvents(cal.calendar_id, args.start as string, args.end as string);
+            events.push(...calEvents);
+          }
+        }
+
+        if (detailLevel === "full") {
+          const fullEvents = [];
+          for (const evt of events) {
+            fullEvents.push(await service.getEvent(evt.calendar_id, evt.uid));
+          }
+          return ok({ events: fullEvents });
+        }
+        return ok({ events });
+      }
+
+      case "get_today_events": {
+        const calendar = args.calendar as string | undefined;
+        const detailLevel = (args.detail_level as string) ?? "summary";
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+
+        let events;
+        if (calendar) {
+          events = await service.listEvents(calendar, todayStart, todayEnd);
+        } else {
+          const calendars = await service.listCalendars();
+          events = [];
+          for (const cal of calendars) {
+            const calEvents = await service.listEvents(cal.calendar_id, todayStart, todayEnd);
+            events.push(...calEvents);
+          }
+        }
+
+        if (detailLevel === "full") {
+          const fullEvents = [];
+          for (const evt of events) {
+            fullEvents.push(await service.getEvent(evt.calendar_id, evt.uid));
+          }
+          return ok({ events: fullEvents });
+        }
+        return ok({ events });
+      }
+
+      case "search_events": {
+        const query = (args.query as string).toLowerCase();
+        const calendar = args.calendar as string | undefined;
+        const detailLevel = (args.detail_level as string) ?? "summary";
+        const now = new Date();
+        const start = (args.start as string) ?? new Date(now.getTime() - 90 * 86400000).toISOString();
+        const end = (args.end as string) ?? new Date(now.getTime() + 90 * 86400000).toISOString();
+
+        let summaryEvents;
+        if (calendar) {
+          summaryEvents = await service.listEvents(calendar, start, end);
+        } else {
+          const calendars = await service.listCalendars();
+          summaryEvents = [];
+          for (const cal of calendars) {
+            const calEvents = await service.listEvents(cal.calendar_id, start, end);
+            summaryEvents.push(...calEvents);
+          }
+        }
+
+        if (detailLevel === "full") {
+          const fullEvents = [];
+          for (const evt of summaryEvents) {
+            fullEvents.push(await service.getEvent(evt.calendar_id, evt.uid));
+          }
+          const matched = fullEvents.filter((e) => {
+            const title = e.title?.toLowerCase() ?? "";
+            const location = e.location?.toLowerCase() ?? "";
+            const description = e.description?.toLowerCase() ?? "";
+            return title.includes(query) || location.includes(query) || description.includes(query);
+          });
+          return ok({ events: matched });
+        }
+
+        const matched = summaryEvents.filter((e) => {
+          const title = e.title?.toLowerCase() ?? "";
+          const location = e.location?.toLowerCase() ?? "";
+          return title.includes(query) || location.includes(query);
+        });
+        return ok({ events: matched });
       }
 
       case "get_event": {
         const event = await service.getEvent(args.calendar as string, args.uid as string);
-        return ok(JSON.stringify(event, null, 2));
+        return ok({ event });
       }
 
       case "create_event": {
         const icsString = generateEventIcs({
-          summary: args.summary as string,
+          title: args.title as string,
           start: args.start as string,
           end: args.end as string,
+          all_day: (args.all_day as boolean) ?? false,
           location: args.location as string | undefined,
           description: args.description as string | undefined,
           attendees: args.attendees as Array<{ email: string; name?: string }> | undefined,
         });
-        await service.createEvent(args.calendar as string, icsString);
-        return ok(JSON.stringify({ status: "created" }));
+        const uidMatch = icsString.match(/UID:(.+)/);
+        const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
+        const event = await service.createEvent(args.calendar as string, icsString, uid);
+        return ok({ event });
       }
 
       case "update_event": {
+        const span = (args.span as string) ?? "this";
         const existing = await service.getEvent(args.calendar as string, args.uid as string);
+
+        if (existing.is_recurring && (span === "this" || span === "future")) {
+          return error("not_implemented", "Recurring event instance modification is not yet supported");
+        }
+
         const icsString = generateEventIcs({
-          summary: (args.summary as string) ?? existing.summary,
+          title: (args.title as string) ?? existing.title,
           start: (args.start as string) ?? existing.start,
           end: (args.end as string) ?? existing.end,
-          location: (args.location as string) ?? existing.location,
-          description: (args.description as string) ?? existing.description,
+          all_day: (args.all_day as boolean) ?? existing.all_day,
+          location: (args.location as string) ?? existing.location ?? undefined,
+          description: (args.description as string) ?? existing.description ?? undefined,
           attendees:
             (args.attendees as Array<{ email: string; name?: string }> | undefined) ??
-            existing.attendees,
+            existing.attendees?.map((a: { email: string; name?: string | null }) => ({
+              email: a.email,
+              name: a.name ?? undefined,
+            })),
         });
-        await service.updateEvent(args.calendar as string, args.uid as string, icsString);
-        return ok(JSON.stringify({ status: "updated", uid: args.uid }));
+        const event = await service.updateEvent(args.calendar as string, args.uid as string, icsString);
+        return ok({ event });
       }
 
       case "delete_event": {
+        const span = (args.span as string) ?? "all";
+        if (span === "this" || span === "future") {
+          const existing = await service.getEvent(args.calendar as string, args.uid as string);
+          if (existing.is_recurring) {
+            return error("not_implemented", "Recurring event instance deletion is not yet supported");
+          }
+        }
         await service.deleteEvent(args.calendar as string, args.uid as string);
-        return ok(JSON.stringify({ status: "deleted", uid: args.uid }));
+        return ok({ deleted: true, uid: args.uid });
       }
 
       case "create_events_batch": {
-        const events = args.events as Array<{
-          summary: string;
+        const eventInputs = args.events as Array<{
+          title: string;
           start: string;
           end: string;
+          all_day?: boolean;
           location?: string;
           description?: string;
+          attendees?: Array<{ email: string; name?: string }>;
         }>;
-        let created = 0;
-        for (const event of events) {
-          const icsString = generateEventIcs(event);
-          await service.createEvent(args.calendar as string, icsString);
-          created++;
+        const createdEvents = [];
+        for (const input of eventInputs) {
+          const icsString = generateEventIcs(input);
+          const uidMatch = icsString.match(/UID:(.+)/);
+          const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
+          const event = await service.createEvent(args.calendar as string, icsString, uid);
+          createdEvents.push(event);
         }
-        return ok(JSON.stringify({ status: "created", count: created }));
+        return ok({ created: createdEvents.length, events: createdEvents });
       }
 
       case "import_ics": {
-        const icsContent = args.icsContent as string;
+        const icsContent = args.ics_content as string;
         const parsed = parseIcsEvents(icsContent);
         if (parsed.length === 0) {
-          return error("No events found in ICS content");
+          return error("validation_error", "No events found in ICS content");
         }
-        await service.createEvent(args.calendar as string, icsContent);
-        return ok(JSON.stringify({ status: "imported", count: parsed.length }));
+        await service.createEvent(args.calendar as string, icsContent, parsed[0].uid);
+        const importedEvents = [];
+        for (const evt of parsed) {
+          try {
+            const event = await service.getEvent(args.calendar as string, evt.uid);
+            importedEvents.push(event);
+          } catch {
+            // Event may not be fetchable individually if multi-event ICS — skip
+          }
+        }
+        return ok({ imported: parsed.length, events: importedEvents });
       }
 
       case "find_free_slots": {
+        let calendarIds = args.calendars as string[] | undefined;
+        if (!calendarIds || calendarIds.length === 0) {
+          const allCals = await service.listCalendars();
+          calendarIds = allCals.map((c: { calendar_id: string }) => c.calendar_id);
+        }
         const slots = await service.findFreeSlots(
-          args.calendars as string[],
+          calendarIds,
           args.start as string,
           args.end as string,
           args.duration as number,
           {
-            preferredStart: args.preferredStart as string | undefined,
-            preferredEnd: args.preferredEnd as string | undefined,
+            preferredStart: args.preferred_start as string | undefined,
+            preferredEnd: args.preferred_end as string | undefined,
             ignoreTentative: (args.ignore_tentative as boolean) ?? false,
+            excludeCalendars: args.exclude_calendars as string[] | undefined,
+            includeAllDayAsBusy: (args.include_all_day_as_busy as boolean) ?? false,
           },
         );
-        return ok(JSON.stringify(slots, null, 2));
+        return ok({ slots, count: slots.length });
       }
 
       default:
-        return error(`Unknown tool: ${name}`);
+        return error("validation_error", `Unknown tool: ${name}`);
     }
   } catch (err) {
+    if (err && typeof err === "object" && "code" in err) {
+      const calErr = err as any;
+      if (calErr.code === "CALENDAR_NOT_FOUND" || calErr.code === "EVENT_NOT_FOUND") {
+        return error("not_found", calErr.message);
+      }
+    }
     const pimError = toPimError(err instanceof Error ? err : new Error(String(err)));
-    return error(`${pimError.message}${pimError.isRetryable ? " (retryable)" : ""}`);
+    return error("backend_error", pimError.message);
   }
-}
-
-function ok(text: string) {
-  return { content: [{ type: "text" as const, text }] };
-}
-
-function error(text: string) {
-  return { content: [{ type: "text" as const, text }], isError: true };
 }

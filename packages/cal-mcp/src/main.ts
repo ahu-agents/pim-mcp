@@ -10,7 +10,7 @@ export async function createServer(): Promise<Server> {
   const service = new CalDavService(config);
 
   const server = new Server(
-    { name: "@miguelarios/cal-mcp", version: "0.1.0" },
+    { name: "@miguelarios/cal-mcp", version: "0.3.0" },
     { capabilities: { tools: {} } },
   );
 

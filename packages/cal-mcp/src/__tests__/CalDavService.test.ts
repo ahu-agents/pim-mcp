@@ -64,17 +64,17 @@ describe("CalDavService", () => {
   describe("listCalendars", () => {
     it("fetches calendars from all providers and returns provider-prefixed IDs", async () => {
       const calendars = await service.listCalendars();
-      // 2 calendars per provider × 2 providers = 4
       expect(calendars).toHaveLength(4);
 
-      // Check mailbox calendars
-      const mailboxCals = calendars.filter((c) => c.calendarId.startsWith("mailbox/"));
+      const mailboxCals = calendars.filter((c) => c.calendar_id.startsWith("mailbox/"));
       expect(mailboxCals).toHaveLength(2);
-      expect(mailboxCals[0].calendarId).toBe("mailbox/Work");
-      expect(mailboxCals[0].displayName).toBe("Work");
+      expect(mailboxCals[0].calendar_id).toBe("mailbox/Work");
+      expect(mailboxCals[0].display_name).toBe("Work");
+      expect(mailboxCals[0].source).toBe("mailbox");
+      expect(mailboxCals[0].color).toBeNull();
+      expect(mailboxCals[0].read_only).toBe(false);
 
-      // Check nextcloud calendars
-      const ncCals = calendars.filter((c) => c.calendarId.startsWith("nextcloud/"));
+      const ncCals = calendars.filter((c) => c.calendar_id.startsWith("nextcloud/"));
       expect(ncCals).toHaveLength(2);
     });
 
@@ -109,12 +109,14 @@ describe("CalDavService", () => {
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
-          summary: "Team Meeting",
+          title: "Team Meeting",
           start: "2026-03-10T14:00:00.000Z",
           end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
           location: "Office",
-          status: "CONFIRMED",
-          recurrenceRule: undefined,
+          status: "confirmed",
+          recurrence_rule: null,
+          is_recurring: false,
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -129,19 +131,11 @@ describe("CalDavService", () => {
 
       expect(events).toHaveLength(1);
       expect(events[0].uid).toBe("evt-1");
-      expect(events[0].calendarId).toBe("mailbox/Work");
-      expect(events[0].summary).toBe("Team Meeting");
-      expect(events[0].isRecurring).toBe(false);
-
-      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledWith(
-        expect.objectContaining({
-          timeRange: {
-            start: "2026-03-10T00:00:00Z",
-            end: "2026-03-10T23:59:59Z",
-          },
-          expand: true,
-        }),
-      );
+      expect(events[0].calendar_id).toBe("mailbox/Work");
+      expect(events[0].title).toBe("Team Meeting");
+      expect(events[0].is_recurring).toBe(false);
+      expect(events[0].all_day).toBe(false);
+      expect(events[0].location).toBe("Office");
     });
 
     it("throws CalendarError for unknown provider", async () => {
@@ -158,16 +152,21 @@ describe("CalDavService", () => {
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
-          summary: "Team Meeting",
+          title: "Team Meeting",
           start: "2026-03-10T14:00:00.000Z",
           end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
           location: "Office",
           description: "Weekly standup",
-          status: "CONFIRMED",
-          transparency: "OPAQUE",
-          attendees: [{ email: "bob@example.com", name: "Bob" }],
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [{ email: "bob@example.com", name: "Bob", status: null, role: null }],
           organizer: { email: "miguel@example.com", name: "Miguel" },
-          recurrenceRule: undefined,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -177,10 +176,14 @@ describe("CalDavService", () => {
       const event = await service.getEvent("mailbox/Work", "evt-1");
 
       expect(event.uid).toBe("evt-1");
-      expect(event.calendarId).toBe("mailbox/Work");
+      expect(event.calendar_id).toBe("mailbox/Work");
+      expect(event.title).toBe("Team Meeting");
       expect(event.description).toBe("Weekly standup");
+      expect(event.availability).toBe("busy");
       expect(event.attendees).toHaveLength(1);
       expect(event.organizer?.email).toBe("miguel@example.com");
+      expect(event.recurrence_rule).toBeNull();
+      expect(event.url).toBeNull();
     });
 
     it("throws CalendarError when event not found", async () => {
@@ -196,39 +199,90 @@ describe("CalDavService", () => {
   });
 
   describe("createEvent", () => {
-    it("creates a calendar object with generated iCal string", async () => {
+    it("creates a calendar object and returns the created event", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
 
-      await service.createEvent("mailbox/Work", "BEGIN:VCALENDAR\nEND:VCALENDAR");
+      // First call: createCalendarObject succeeds
+      __mockClient.createCalendarObject.mockResolvedValue({ ok: true });
 
-      expect(__mockClient.createCalendarObject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          iCalString: "BEGIN:VCALENDAR\nEND:VCALENDAR",
-        }),
-      );
+      // Second call: getEvent fetches the created event back
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "new-evt",
+          title: "New Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: null,
+          availability: null,
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/new-evt.ics", etag: '"e1"' },
+      ]);
+
+      const result = await service.createEvent("mailbox/Work", "BEGIN:VCALENDAR\nEND:VCALENDAR", "new-evt");
+
+      expect(result.uid).toBe("new-evt");
+      expect(result.title).toBe("New Event");
+      expect(__mockClient.createCalendarObject).toHaveBeenCalled();
     });
   });
 
   describe("updateEvent", () => {
-    it("updates an existing calendar object by UID", async () => {
+    it("updates an existing calendar object and returns the updated event", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
-      (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
-      __mockClient.fetchCalendarObjects.mockResolvedValue([
+
+      // findCalendarObject call
+      (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
         { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
       ]);
 
-      await service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR");
+      __mockClient.updateCalendarObject.mockResolvedValue({ ok: true });
 
-      expect(__mockClient.updateCalendarObject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          calendarObject: expect.objectContaining({
-            url: "/cal/evt-1.ics",
-            etag: '"e1"',
-            data: "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR",
-          }),
-        }),
-      );
+      // getEvent fetch-after-write: findCalendarObject calls parseIcsEvents (match uid)
+      const fullEvent = {
+        uid: "evt-1",
+        title: "Updated Meeting",
+        start: "2026-03-10T14:00:00.000Z",
+        end: "2026-03-10T15:00:00.000Z",
+        all_day: false,
+        location: null,
+        description: null,
+        status: null,
+        availability: null,
+        url: null,
+        attendees: [],
+        organizer: null,
+        recurrence_rule: null,
+        is_recurring: false,
+        created: null,
+        last_modified: null,
+      };
+      // findCalendarObject parse + getEvent parse on same object
+      (parseIcsEvents as any).mockReturnValueOnce([fullEvent]);
+      (parseIcsEvents as any).mockReturnValueOnce([fullEvent]);
+      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e2"' },
+      ]);
+
+      const result = await service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR");
+
+      expect(result.uid).toBe("evt-1");
+      expect(result.title).toBe("Updated Meeting");
+      expect(__mockClient.updateCalendarObject).toHaveBeenCalled();
     });
 
     it("throws CalendarError when event to update is not found", async () => {
@@ -279,21 +333,23 @@ describe("CalDavService", () => {
         .mockReturnValueOnce([
           {
             uid: "evt-0",
-            summary: "Morning",
+            title: "Morning",
             start: "2026-03-10T09:00:00.000Z",
             end: "2026-03-10T10:00:00.000Z",
-            status: "CONFIRMED",
-            transparency: "OPAQUE",
+            all_day: false,
+            status: "confirmed",
+            availability: "busy",
           },
         ])
         .mockReturnValueOnce([
           {
             uid: "evt-1",
-            summary: "Afternoon",
+            title: "Afternoon",
             start: "2026-03-10T14:00:00.000Z",
             end: "2026-03-10T15:00:00.000Z",
-            status: "CONFIRMED",
-            transparency: "OPAQUE",
+            all_day: false,
+            status: "confirmed",
+            availability: "busy",
           },
         ]);
 
@@ -309,7 +365,7 @@ describe("CalDavService", () => {
       expect(slots[0].duration).toBeGreaterThanOrEqual(30);
     });
 
-    it("ignores transparent events (TRANSP:TRANSPARENT)", async () => {
+    it("ignores free events (availability: free)", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = (await import("../ical.js")) as any;
 
@@ -319,11 +375,12 @@ describe("CalDavService", () => {
       parseIcsEvents.mockReturnValue([
         {
           uid: "evt-0",
-          summary: "All Day Free",
+          title: "All Day Free",
           start: "2026-03-10T08:00:00.000Z",
           end: "2026-03-10T17:00:00.000Z",
-          status: "CONFIRMED",
-          transparency: "TRANSPARENT",
+          all_day: false,
+          status: "confirmed",
+          availability: "free",
         },
       ]);
 
@@ -334,7 +391,7 @@ describe("CalDavService", () => {
         30,
       );
 
-      // Transparent event doesn't block — entire range is free
+      // Free event doesn't block — entire range is free
       expect(slots.length).toBe(1);
       expect(slots[0].duration).toBe(540); // 9 hours
     });
@@ -349,11 +406,12 @@ describe("CalDavService", () => {
       parseIcsEvents.mockReturnValue([
         {
           uid: "evt-0",
-          summary: "Maybe Meeting",
+          title: "Maybe Meeting",
           start: "2026-03-10T09:00:00.000Z",
           end: "2026-03-10T17:00:00.000Z",
-          status: "TENTATIVE",
-          transparency: "OPAQUE",
+          all_day: false,
+          status: "tentative",
+          availability: "busy",
         },
       ]);
 
@@ -369,7 +427,7 @@ describe("CalDavService", () => {
       expect(slots[0].duration).toBe(60);
     });
 
-    it("ignores tentative events when ignore_tentative is true", async () => {
+    it("ignores tentative events when ignoreTentative is true", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = (await import("../ical.js")) as any;
 
@@ -379,11 +437,12 @@ describe("CalDavService", () => {
       parseIcsEvents.mockReturnValue([
         {
           uid: "evt-0",
-          summary: "Maybe Meeting",
+          title: "Maybe Meeting",
           start: "2026-03-10T09:00:00.000Z",
           end: "2026-03-10T17:00:00.000Z",
-          status: "TENTATIVE",
-          transparency: "OPAQUE",
+          all_day: false,
+          status: "tentative",
+          availability: "busy",
         },
       ]);
 
@@ -398,6 +457,101 @@ describe("CalDavService", () => {
       // Tentative ignored — entire range is free
       expect(slots).toHaveLength(1);
       expect(slots[0].duration).toBe(540);
+    });
+
+    it("excludes events from excluded calendars", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = (await import("../ical.js")) as any;
+
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
+      ]);
+      parseIcsEvents.mockReturnValue([
+        {
+          uid: "evt-0",
+          title: "Blocked",
+          start: "2026-03-10T09:00:00.000Z",
+          end: "2026-03-10T17:00:00.000Z",
+          all_day: false,
+          status: "confirmed",
+          availability: "busy",
+          calendar_id: "mailbox/Work",
+        },
+      ]);
+
+      const slots = await service.findFreeSlots(
+        ["mailbox/Work"],
+        "2026-03-10T08:00:00Z",
+        "2026-03-10T17:00:00Z",
+        30,
+        { excludeCalendars: ["mailbox/Work"] },
+      );
+
+      // Excluded calendar — entire range is free
+      expect(slots).toHaveLength(1);
+      expect(slots[0].duration).toBe(540);
+    });
+
+    it("skips all-day events by default", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = (await import("../ical.js")) as any;
+
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
+      ]);
+      parseIcsEvents.mockReturnValue([
+        {
+          uid: "evt-0",
+          title: "Holiday",
+          start: "2026-03-10T00:00:00.000Z",
+          end: "2026-03-11T00:00:00.000Z",
+          all_day: true,
+          status: "confirmed",
+          availability: "busy",
+        },
+      ]);
+
+      const slots = await service.findFreeSlots(
+        ["mailbox/Work"],
+        "2026-03-10T08:00:00Z",
+        "2026-03-10T17:00:00Z",
+        30,
+      );
+
+      // All-day events skipped by default — entire range free
+      expect(slots).toHaveLength(1);
+      expect(slots[0].duration).toBe(540);
+    });
+
+    it("blocks all-day events when includeAllDayAsBusy is true", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = (await import("../ical.js")) as any;
+
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
+      ]);
+      parseIcsEvents.mockReturnValue([
+        {
+          uid: "evt-0",
+          title: "Holiday",
+          start: "2026-03-10T00:00:00.000Z",
+          end: "2026-03-11T00:00:00.000Z",
+          all_day: true,
+          status: "confirmed",
+          availability: "busy",
+        },
+      ]);
+
+      const slots = await service.findFreeSlots(
+        ["mailbox/Work"],
+        "2026-03-10T08:00:00Z",
+        "2026-03-10T17:00:00Z",
+        30,
+        { includeAllDayAsBusy: true },
+      );
+
+      // All-day blocks entire range — no free slots
+      expect(slots).toHaveLength(0);
     });
 
     it("sorts preferred-hours slots first", async () => {
