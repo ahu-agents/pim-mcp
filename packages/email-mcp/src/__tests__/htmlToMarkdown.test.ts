@@ -131,4 +131,56 @@ describe("htmlToMarkdown", () => {
     expect(result).not.toContain("spacer.gif");
     expect(result).toContain("Content");
   });
+
+  it("resolves redirect URLs", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url === "https://redirect.example.com/abc123") {
+        return { url: "https://real.example.com/page" };
+      }
+      return { url };
+    });
+
+    const result = await htmlToMarkdown(
+      '<a href="https://redirect.example.com/abc123">Click here</a>',
+    );
+    expect(result).toContain("[Click here](https://real.example.com/page)");
+    expect(result).not.toContain("redirect.example.com");
+  });
+
+  it("keeps original URL on fetch error", async () => {
+    mockFetch.mockImplementation(async () => {
+      throw new Error("Network error");
+    });
+
+    const result = await htmlToMarkdown('<a href="https://example.com/page">Link</a>');
+    expect(result).toContain("[Link](https://example.com/page)");
+  });
+
+  it("strips tracking params from resolved URLs", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("redirect.example.com")) {
+        return {
+          url: "https://cooking.example.com/recipe?campaign_id=58&utm_source=email&id=123",
+        };
+      }
+      return { url };
+    });
+
+    const result = await htmlToMarkdown('<a href="https://redirect.example.com/xyz">Recipe</a>');
+    expect(result).toContain("id=123");
+    expect(result).not.toContain("campaign_id");
+    expect(result).not.toContain("utm_source");
+  });
+
+  it("preserves functional URL params after resolution", async () => {
+    mockFetch.mockImplementation(async (url: string) => ({ url }));
+
+    const result = await htmlToMarkdown(
+      '<a href="https://calendar.google.com/calendar/event?action=RESPOND&eid=abc&rst=1&tok=xyz">Yes</a>',
+    );
+    expect(result).toContain("action=RESPOND");
+    expect(result).toContain("eid=abc");
+    expect(result).toContain("rst=1");
+    expect(result).toContain("tok=xyz");
+  });
 });
