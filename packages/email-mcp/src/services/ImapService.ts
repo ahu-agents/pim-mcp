@@ -18,6 +18,7 @@ export interface EmailFull extends EmailSummary {
   cc?: Array<{ name?: string; address: string }>;
   textBody?: string;
   htmlBody?: string;
+  markdownBody?: string;
   attachments: Array<{
     filename: string;
     contentType: string;
