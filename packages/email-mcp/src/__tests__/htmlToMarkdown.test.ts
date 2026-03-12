@@ -1,0 +1,213 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanUrl, htmlToMarkdown } from "../htmlToMarkdown.js";
+
+describe("cleanUrl", () => {
+  it("strips utm params", () => {
+    const url =
+      "https://example.com/page?utm_source=email&utm_medium=newsletter&utm_campaign=spring&id=42";
+    expect(cleanUrl(url)).toBe("https://example.com/page?id=42");
+  });
+
+  it("strips all known tracking params", () => {
+    const url =
+      "https://example.com/?campaign_id=58&emc=edit&instance_id=123&nl=cooking&regi_id=456&segment_id=789&user_id=abc&fbclid=fb1&gclid=gc1&mc_cid=mc1&mc_eid=me1&__s=s1&_hsenc=hs1&_hsmi=hm1&mkt_tok=mt1&keep=yes";
+    expect(cleanUrl(url)).toBe("https://example.com/?keep=yes");
+  });
+
+  it("preserves functional params like Google Calendar", () => {
+    const url =
+      "https://calendar.google.com/calendar/event?action=RESPOND&eid=abc123&rst=1&tok=xyz789&ctz=America%2FLos_Angeles&hl=en&es=0";
+    expect(cleanUrl(url)).toBe(url);
+  });
+
+  it("returns malformed URLs as-is", () => {
+    expect(cleanUrl("not-a-url")).toBe("not-a-url");
+    expect(cleanUrl("")).toBe("");
+  });
+
+  it("removes trailing ? when all params are stripped", () => {
+    const url = "https://example.com/?utm_source=email";
+    expect(cleanUrl(url)).toBe("https://example.com/");
+  });
+
+  it("handles URLs with no query params", () => {
+    const url = "https://example.com/page";
+    expect(cleanUrl(url)).toBe("https://example.com/page");
+  });
+});
+
+// Mock fetch globally so no real network calls happen
+const mockFetch = vi.fn().mockImplementation(async (url: string) => ({
+  url, // by default, "no redirect" — resolved URL equals input
+}));
+vi.stubGlobal("fetch", mockFetch);
+
+describe("htmlToMarkdown", () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    // Default: no redirects (resolved URL = input URL)
+    mockFetch.mockImplementation(async (url: string) => ({ url }));
+  });
+
+  it("converts basic HTML to markdown", async () => {
+    const result = await htmlToMarkdown("<p>Hello <strong>world</strong></p>");
+    expect(result).toContain("Hello **world**");
+  });
+
+  it("strips style tags", async () => {
+    const result = await htmlToMarkdown("<style>.foo{color:red}</style><p>Content</p>");
+    expect(result).not.toContain(".foo");
+    expect(result).not.toContain("color");
+    expect(result).toContain("Content");
+  });
+
+  it("strips script tags", async () => {
+    const result = await htmlToMarkdown('<script>alert("xss")</script><p>Safe</p>');
+    expect(result).not.toContain("alert");
+    expect(result).toContain("Safe");
+  });
+
+  it("converts headings", async () => {
+    const result = await htmlToMarkdown("<h2>Title</h2><p>Text</p>");
+    expect(result).toContain("## Title");
+  });
+
+  it("converts lists", async () => {
+    const result = await htmlToMarkdown("<ul><li>One</li><li>Two</li></ul>");
+    expect(result).toContain("- One");
+    expect(result).toContain("- Two");
+  });
+
+  it("converts links", async () => {
+    const result = await htmlToMarkdown('<a href="https://example.com">Click</a>');
+    expect(result).toContain("[Click](https://example.com)");
+  });
+
+  it("collapses excessive blank lines", async () => {
+    const result = await htmlToMarkdown("<p>A</p><br><br><br><br><br><p>B</p>");
+    // Should not have more than 2 consecutive newlines
+    expect(result).not.toMatch(/\n{4,}/);
+    expect(result).toContain("A");
+    expect(result).toContain("B");
+  });
+
+  it("removes tracking pixels (width=1 height=1)", async () => {
+    const result = await htmlToMarkdown(
+      '<p>Content</p><img width="1" height="1" src="https://track.example.com/pixel.gif">',
+    );
+    expect(result).toContain("Content");
+    expect(result).not.toContain("track.example.com");
+    expect(result).not.toContain("pixel");
+  });
+
+  it("removes hidden preview text divs", async () => {
+    const result = await htmlToMarkdown(
+      '<div style="display:none;max-height:0;overflow:hidden">Preview text here</div><p>Real content</p>',
+    );
+    expect(result).not.toContain("Preview text here");
+    expect(result).toContain("Real content");
+  });
+
+  it("removes Google Calendar hidden spans", async () => {
+    const result = await htmlToMarkdown(
+      '<span style="display: none; font-size: 1px; color: #fff; line-height: 1px; height: 0; max-height: 0; width: 0; max-width: 0; opacity: 0; overflow: hidden;">Hidden gcal text</span><p>Visible</p>',
+    );
+    expect(result).not.toContain("Hidden gcal text");
+    expect(result).toContain("Visible");
+  });
+
+  it("replaces images with [Image: alt]", async () => {
+    const result = await htmlToMarkdown(
+      '<img src="https://example.com/photo.jpg" alt="Spring Minestrone" width="600" height="400">',
+    );
+    expect(result).toContain("[Image: Spring Minestrone]");
+    expect(result).not.toContain("https://example.com/photo.jpg");
+  });
+
+  it("removes images with no alt text", async () => {
+    const result = await htmlToMarkdown(
+      '<img src="https://example.com/spacer.gif" width="600" height="10"><p>Content</p>',
+    );
+    expect(result).not.toContain("spacer.gif");
+    expect(result).toContain("Content");
+  });
+
+  it("resolves redirect URLs", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url === "https://redirect.example.com/abc123") {
+        return { url: "https://real.example.com/page" };
+      }
+      return { url };
+    });
+
+    const result = await htmlToMarkdown(
+      '<a href="https://redirect.example.com/abc123">Click here</a>',
+    );
+    expect(result).toContain("[Click here](https://real.example.com/page)");
+    expect(result).not.toContain("redirect.example.com");
+  });
+
+  it("keeps original URL on fetch error", async () => {
+    mockFetch.mockImplementation(async () => {
+      throw new Error("Network error");
+    });
+
+    const result = await htmlToMarkdown('<a href="https://example.com/page">Link</a>');
+    expect(result).toContain("[Link](https://example.com/page)");
+  });
+
+  it("strips tracking params from resolved URLs", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("redirect.example.com")) {
+        return {
+          url: "https://cooking.example.com/recipe?campaign_id=58&utm_source=email&id=123",
+        };
+      }
+      return { url };
+    });
+
+    const result = await htmlToMarkdown('<a href="https://redirect.example.com/xyz">Recipe</a>');
+    expect(result).toContain("id=123");
+    expect(result).not.toContain("campaign_id");
+    expect(result).not.toContain("utm_source");
+  });
+
+  it("preserves functional URL params after resolution", async () => {
+    mockFetch.mockImplementation(async (url: string) => ({ url }));
+
+    const result = await htmlToMarkdown(
+      '<a href="https://calendar.google.com/calendar/event?action=RESPOND&eid=abc&rst=1&tok=xyz">Yes</a>',
+    );
+    expect(result).toContain("action=RESPOND");
+    expect(result).toContain("eid=abc");
+    expect(result).toContain("rst=1");
+    expect(result).toContain("tok=xyz");
+  });
+
+  it("dramatically reduces NYT newsletter size", async () => {
+    const fixturePath = resolve(__dirname, "__fixtures__/nyt-example.html");
+    const html = readFileSync(fixturePath, "utf-8");
+
+    // Mock fetch: no redirects (just test sanitize+turndown+images)
+    mockFetch.mockImplementation(async (url: string) => ({ url }));
+
+    const result = await htmlToMarkdown(html);
+
+    // Original HTML is ~65KB, result should be significantly smaller
+    expect(result.length).toBeLessThan(html.length * 0.5);
+
+    // Should not contain CSS
+    expect(result).not.toMatch(/\{[^}]*color\s*:/);
+    expect(result).not.toMatch(/@media/);
+
+    // Should not contain HTML tags
+    expect(result).not.toContain("<style");
+    expect(result).not.toContain("<table");
+    expect(result).not.toContain("<td");
+
+    // Should contain readable content
+    expect(result.length).toBeGreaterThan(0);
+  });
+});
