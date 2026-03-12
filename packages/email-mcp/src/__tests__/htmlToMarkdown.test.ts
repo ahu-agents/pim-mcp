@@ -55,18 +55,14 @@ describe("htmlToMarkdown", () => {
   });
 
   it("strips style tags", async () => {
-    const result = await htmlToMarkdown(
-      "<style>.foo{color:red}</style><p>Content</p>",
-    );
+    const result = await htmlToMarkdown("<style>.foo{color:red}</style><p>Content</p>");
     expect(result).not.toContain(".foo");
     expect(result).not.toContain("color");
     expect(result).toContain("Content");
   });
 
   it("strips script tags", async () => {
-    const result = await htmlToMarkdown(
-      '<script>alert("xss")</script><p>Safe</p>',
-    );
+    const result = await htmlToMarkdown('<script>alert("xss")</script><p>Safe</p>');
     expect(result).not.toContain("alert");
     expect(result).toContain("Safe");
   });
@@ -77,24 +73,18 @@ describe("htmlToMarkdown", () => {
   });
 
   it("converts lists", async () => {
-    const result = await htmlToMarkdown(
-      "<ul><li>One</li><li>Two</li></ul>",
-    );
+    const result = await htmlToMarkdown("<ul><li>One</li><li>Two</li></ul>");
     expect(result).toContain("- One");
     expect(result).toContain("- Two");
   });
 
   it("converts links", async () => {
-    const result = await htmlToMarkdown(
-      '<a href="https://example.com">Click</a>',
-    );
+    const result = await htmlToMarkdown('<a href="https://example.com">Click</a>');
     expect(result).toContain("[Click](https://example.com)");
   });
 
   it("collapses excessive blank lines", async () => {
-    const result = await htmlToMarkdown(
-      "<p>A</p><br><br><br><br><br><p>B</p>",
-    );
+    const result = await htmlToMarkdown("<p>A</p><br><br><br><br><br><p>B</p>");
     // Should not have more than 2 consecutive newlines
     expect(result).not.toMatch(/\n{4,}/);
     expect(result).toContain("A");

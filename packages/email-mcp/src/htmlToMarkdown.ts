@@ -62,10 +62,34 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   // Step 1: Sanitize
   const clean = sanitize(html, {
     allowedTags: [
-      "p", "br", "b", "i", "em", "strong", "a",
-      "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
-      "table", "tr", "td", "th", "thead", "tbody",
-      "blockquote", "pre", "code", "hr", "span", "div",
+      "p",
+      "br",
+      "b",
+      "i",
+      "em",
+      "strong",
+      "a",
+      "ul",
+      "ol",
+      "li",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "table",
+      "tr",
+      "td",
+      "th",
+      "thead",
+      "tbody",
+      "blockquote",
+      "pre",
+      "code",
+      "hr",
+      "span",
+      "div",
       "img",
     ],
     allowedAttributes: {
@@ -98,12 +122,9 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   td.addRule("listItem", {
     filter: "li",
     replacement: (content, _node, options) => {
-      const marker = options.bulletListMarker + " ";
-      const indented = content
-        .replace(/^\n+/, "")
-        .replace(/\n+$/, "\n")
-        .replace(/\n/gm, "\n    ");
-      return marker + indented + (content.match(/\n+$/) ? "\n\n" : "\n");
+      const marker = `${options.bulletListMarker} `;
+      const indented = content.replace(/^\n+/, "").replace(/\n+$/, "\n").replace(/\n/gm, "\n    ");
+      return `${marker}${indented}${content.match(/\n+$/) ? "\n\n" : "\n"}`;
     },
   });
 
@@ -129,13 +150,10 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   }
 
   // Step 5: Strip tracking params from all URLs
-  markdown = markdown.replace(
-    /\(https?:\/\/[^)]+\)/g,
-    (match) => {
-      const url = match.slice(1, -1); // remove parens
-      return `(${cleanUrl(url)})`;
-    },
-  );
+  markdown = markdown.replace(/\(https?:\/\/[^)]+\)/g, (match) => {
+    const url = match.slice(1, -1); // remove parens
+    return `(${cleanUrl(url)})`;
+  });
 
   // Step 6: Post-process — collapse excessive newlines
   markdown = markdown.replace(/\n{3,}/g, "\n\n").trim();
@@ -143,9 +161,7 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   return markdown;
 }
 
-async function resolveUrls(
-  urls: string[],
-): Promise<Map<string, string>> {
+async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
   const resolved = new Map<string, string>();
   await Promise.allSettled(
     urls.map(async (url) => {
