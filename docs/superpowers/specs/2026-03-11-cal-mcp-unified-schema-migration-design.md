@@ -41,31 +41,35 @@ interface EventSummary {
   start: string;
   end: string;
   all_day: boolean;          // NEW
-  location?: string;
-  status?: string;           // lowercase values
+  location: string | null;   // always present, null when absent
+  status: string | null;     // lowercase values, null when absent
   is_recurring: boolean;     // was isRecurring
 }
 ```
 
 **EventFull (extends EventSummary):**
+
+All fields always present in JSON output. Use `| null` not `?` (optional).
+The spec requires keys to be present with `null` values, not omitted.
+
 ```typescript
 interface EventFull extends EventSummary {
-  description?: string;
-  url?: string;              // NEW
-  availability?: string;     // was transparency, values: busy/free/tentative/unavailable
-  attendees?: Array<{
-    name?: string;
+  description: string | null;
+  url: string | null;                     // NEW, parse from vevent.url
+  availability: string | null;            // was transparency, values: busy/free/tentative/unavailable
+  attendees: Array<{
+    name: string | null;
     email: string;
-    status?: string;         // lowercase
-    role?: string;           // NEW (not populated by CalDAV yet, reserved)
-  }>;
-  organizer?: {
-    name?: string;
+    status: string | null;                // lowercase
+    role: string | null;                  // NEW (not populated by CalDAV yet, always null)
+  }>;                                     // always present, empty array when none
+  organizer: {
+    name: string | null;
     email: string;
-  };
-  recurrence_rule?: string;  // was recurrenceRule
-  created?: string;
-  last_modified?: string;    // was lastModified
+  } | null;                               // null when absent
+  recurrence_rule: string | null;         // was recurrenceRule
+  created: string | null;
+  last_modified: string | null;           // was lastModified
 }
 ```
 
@@ -108,15 +112,19 @@ interface FindFreeSlotsOptions {
 
 ### Existing Method Changes
 
-No signature changes. Type renames flow through automatically.
+Type renames flow through automatically. Signature changes noted below.
 
-- **`listCalendars()`**: Add `color` (from tsdav `calendarColor` or `null`), `read_only` (default `false`), rename `providerId` → `source` in mapping.
+- **`listCalendars()`**: Add `color` (from tsdav `calendarColor` if available, else `null`), `read_only` (from tsdav privileges if available, else `false`), rename `providerId` → `source` in mapping.
 
-- **`listEvents()`**: Internal `toEventSummary()` mapping uses new field names from ParsedEvent. Adds `all_day`.
+- **`listEvents()`**: Internal `toEventSummary()` mapping uses new field names from ParsedEvent. Adds `all_day`. Ensures `location` and `status` are `null` (not `undefined`) when absent.
 
-- **`getEvent()`**: Internal `toEventFull()` mapping uses new field names.
+- **`getEvent()`**: Internal `toEventFull()` mapping uses new field names. All nullable fields emit `null` when absent (not omitted). `attendees` is `[]` when none. `organizer` is `null` when absent.
 
-- **`findFreeSlots()`**: Add `excludeCalendars` filtering (skip events from those calendars). Add `includeAllDayAsBusy` filtering (skip all-day events unless `true`). Transparency→availability rename is cosmetic — filtering logic checks same underlying values.
+- **`createEvent()`**: Signature changes from `Promise<void>` to `Promise<EventFull>`. After creating the calendar object, performs a fetch-after-write: calls `getEvent(calendarId, uid)` to retrieve and return the created event. The UID is extracted from the generated ICS before upload.
+
+- **`updateEvent()`**: Signature changes from `Promise<void>` to `Promise<EventFull>`. After updating, calls `getEvent(calendarId, uid)` to retrieve and return the updated event.
+
+- **`findFreeSlots()`**: `FindFreeSlotsOptions` gains `excludeCalendars` and `includeAllDayAsBusy`. Filter logic: skip events where `availability === "free"`, skip all-day events unless `includeAllDayAsBusy` is `true`, skip tentative events when `ignoreTentative` is `true`, skip events from `excludeCalendars`. Block otherwise.
 
 ### No New Service Methods
 
@@ -157,13 +165,14 @@ function error(code: string, message: string) {
 Error code mapping:
 - `CalendarError(CALENDAR_NOT_FOUND)` → `not_found`
 - `CalendarError(EVENT_NOT_FOUND)` → `not_found`
+- Input validation failures (missing required fields, invalid date formats) → `validation_error`
 - Everything else → `backend_error`
 
 ### Tool Schema Changes (Existing)
 
 | Tool | Change |
 |------|--------|
-| `create_event` | `summary` → `title`, add `all_day` param |
+| `create_event` | `summary` → `title`, add `all_day` param. `calendar` stays required (CalDAV needs a target account+calendar; "system default" does not apply to multi-account CalDAV). |
 | `update_event` | `summary` → `title`, add `all_day` param, add `span` param |
 | `delete_event` | Add `span` param |
 | `create_events_batch` | `summary` → `title` in event objects |
@@ -180,9 +189,10 @@ Error code mapping:
 
 **`search_events`**
 - Input: `query`, `calendar?`, `start?`, `end?`, `detail_level?`
-- Logic: default start = 90 days ago, end = 90 days ahead. Call `service.listEvents()` for range, then filter where `query` matches (case-insensitive) against `title`, `description`, or `location`. If no `calendar`, iterate all calendars.
+- Logic: default start = 90 days ago, end = 90 days ahead. Call `service.listEvents()` for range, then filter where `query` matches (case-insensitive) against `title` and `location` (the summary-level fields). If no `calendar`, iterate all calendars.
 - Returns: `{ events: [...] }` (matched events only)
-- For `detail_level: "full"`, fetch full details via `service.getEvent()` for each match.
+- For `detail_level: "full"`, fetch full details via `service.getEvent()` for each match. At full detail, also match against `description`.
+- Note: at summary level, `description` is not available so it is not searched. This is an acceptable tradeoff — most searches target title/location anyway.
 
 ### `detail_level` Implementation
 
@@ -196,8 +206,8 @@ When `calendar` is omitted on `list_events`, `get_today_events`, or `search_even
 
 ### `span` Parameter
 
-- `update_event`: accept `span`, default `"this"`. For `"this"` and `"future"`, return `error("not_implemented", "Recurring event instance modification is not yet supported")`. `"all"` is current behavior (update the whole event object).
-- `delete_event`: accept `span`, default `"all"`. Same stub for `"this"` and `"future"`. `"all"` is current behavior.
+- `update_event`: accept `span`, default `"this"`. For non-recurring events, `"this"` behaves identically to `"all"` (modifying "this instance" of a non-recurring event IS modifying the whole event). For recurring events, `"this"` and `"future"` return `error("not_implemented", "Recurring event instance modification is not yet supported")`. `"all"` is current behavior (update the whole event object).
+- `delete_event`: accept `span`, default `"all"`. Same logic: `"this"` and `"future"` on recurring events return `not_implemented`. `"this"` on a non-recurring event behaves like `"all"`. `"all"` is current behavior.
 
 ---
 
@@ -234,9 +244,18 @@ TDD per layer. Update tests first to assert new spec, then update implementation
 
 ---
 
+## Implementation Notes
+
+- **`all_day` detection in ical.ts:** Verify that `node-ical` exposes `vevent.datetype === "date"` for all-day events. If not available, fall back to checking if start/end times are midnight-to-midnight.
+- **`all_day` in ical-generator:** Use `allDay: true` option on the event to produce DATE-only DTSTART/DTEND (no time component).
+- **`color` from tsdav:** Check if `DAVCalendar` type has a `calendarColor` property. If not, always return `null`.
+- **`read_only` from tsdav:** Check tsdav for `privilege` or `acl` properties. If not available, default to `false` and note as known limitation.
+- **Internal vs wire casing:** Response types (`EventSummary`, `EventFull`, `CalendarInfo`) use snake_case to match the wire format — no translation layer needed. Internal options types (`FindFreeSlotsOptions`, `EventCreateProps`) use camelCase per TypeScript convention since they never hit the wire directly; the tool layer maps snake_case input params to camelCase options.
+
+---
+
 ## Out of Scope
 
 - Implementing `span` for `"this"`/`"future"` (CalDAV RECURRENCE-ID semantics — deferred)
-- `attendee.role` population (reserved field, not available from CalDAV parse currently)
-- `url` field population on EventFull (reserved, parse from vevent.url if present)
+- `attendee.role` population (reserved field, always `null` until CalDAV parse supports it)
 - Shared validation fixtures with macos-calendar-mcp (separate follow-up)
