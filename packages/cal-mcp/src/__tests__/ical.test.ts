@@ -32,16 +32,27 @@ SUMMARY:Afternoon Meeting
 END:VEVENT
 END:VCALENDAR`;
 
+const ALL_DAY_ICS = `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:allday-1@example.com
+DTSTART;VALUE=DATE:20260310
+DTEND;VALUE=DATE:20260311
+SUMMARY:Company Holiday
+END:VEVENT
+END:VCALENDAR`;
+
 describe("parseIcsEvents", () => {
   it("parses a single VEVENT from iCalendar string", () => {
     const events = parseIcsEvents(SAMPLE_ICS);
     expect(events).toHaveLength(1);
     expect(events[0].uid).toBe("evt-1@example.com");
-    expect(events[0].summary).toBe("Team Meeting");
+    expect(events[0].title).toBe("Team Meeting");
     expect(events[0].location).toBe("Office Room A");
     expect(events[0].description).toBe("Weekly standup");
-    expect(events[0].status).toBe("CONFIRMED");
-    expect(events[0].transparency).toBe("OPAQUE");
+    expect(events[0].status).toBe("confirmed");
+    expect(events[0].availability).toBe("busy");
+    expect(events[0].all_day).toBe(false);
     expect(events[0].start).toContain("2026-03-10");
     expect(events[0].end).toContain("2026-03-10");
   });
@@ -49,7 +60,7 @@ describe("parseIcsEvents", () => {
   it("parses multiple VEVENTs from iCalendar string", () => {
     const events = parseIcsEvents(MULTI_EVENT_ICS);
     expect(events).toHaveLength(2);
-    expect(events.map((e) => e.summary).sort()).toEqual(["Afternoon Meeting", "Morning Meeting"]);
+    expect(events.map((e) => e.title).sort()).toEqual(["Afternoon Meeting", "Morning Meeting"]);
   });
 
   it("returns empty array for iCalendar with no VEVENTs", () => {
@@ -61,12 +72,42 @@ describe("parseIcsEvents", () => {
     const events = parseIcsEvents("");
     expect(events).toHaveLength(0);
   });
+
+  it("detects all-day events", () => {
+    const events = parseIcsEvents(ALL_DAY_ICS);
+    expect(events).toHaveLength(1);
+    expect(events[0].all_day).toBe(true);
+    expect(events[0].title).toBe("Company Holiday");
+  });
+
+  it("returns null for absent nullable fields", () => {
+    const MINIMAL_ICS = `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:min-1@example.com
+DTSTART:20260310T140000Z
+DTEND:20260310T150000Z
+SUMMARY:Minimal
+END:VEVENT
+END:VCALENDAR`;
+    const events = parseIcsEvents(MINIMAL_ICS);
+    expect(events[0].location).toBeNull();
+    expect(events[0].description).toBeNull();
+    expect(events[0].status).toBeNull();
+    expect(events[0].availability).toBeNull();
+    expect(events[0].organizer).toBeNull();
+    expect(events[0].attendees).toEqual([]);
+    expect(events[0].recurrence_rule).toBeNull();
+    expect(events[0].created).toBeNull();
+    expect(events[0].last_modified).toBeNull();
+    expect(events[0].url).toBeNull();
+  });
 });
 
 describe("generateEventIcs", () => {
   it("generates valid iCalendar string with required fields", () => {
     const ics = generateEventIcs({
-      summary: "Test Event",
+      title: "Test Event",
       start: "2026-03-10T14:00:00Z",
       end: "2026-03-10T15:00:00Z",
     });
@@ -79,7 +120,7 @@ describe("generateEventIcs", () => {
 
   it("includes optional fields when provided", () => {
     const ics = generateEventIcs({
-      summary: "Lunch",
+      title: "Lunch",
       start: "2026-03-10T12:00:00Z",
       end: "2026-03-10T13:00:00Z",
       location: "Cafe",
@@ -91,11 +132,22 @@ describe("generateEventIcs", () => {
 
   it("includes attendees when provided", () => {
     const ics = generateEventIcs({
-      summary: "Meeting",
+      title: "Meeting",
       start: "2026-03-10T14:00:00Z",
       end: "2026-03-10T15:00:00Z",
       attendees: [{ email: "bob@example.com", name: "Bob" }],
     });
     expect(ics).toContain("bob@example.com");
+  });
+
+  it("generates all-day event when all_day is true", () => {
+    const ics = generateEventIcs({
+      title: "Day Off",
+      start: "2026-03-10",
+      end: "2026-03-11",
+      all_day: true,
+    });
+    expect(ics).toContain("BEGIN:VEVENT");
+    expect(ics).toContain("Day Off");
   });
 });
