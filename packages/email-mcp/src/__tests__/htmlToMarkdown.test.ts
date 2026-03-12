@@ -115,4 +115,20 @@ describe("htmlToMarkdown", () => {
     expect(result).not.toContain("Hidden gcal text");
     expect(result).toContain("Visible");
   });
+
+  it("replaces images with [Image: alt]", async () => {
+    const result = await htmlToMarkdown(
+      '<img src="https://example.com/photo.jpg" alt="Spring Minestrone" width="600" height="400">',
+    );
+    expect(result).toContain("[Image: Spring Minestrone]");
+    expect(result).not.toContain("https://example.com/photo.jpg");
+  });
+
+  it("removes images with no alt text", async () => {
+    const result = await htmlToMarkdown(
+      '<img src="https://example.com/spacer.gif" width="600" height="10"><p>Content</p>',
+    );
+    expect(result).not.toContain("spacer.gif");
+    expect(result).toContain("Content");
+  });
 });
