@@ -231,7 +231,11 @@ describe("CalDavService", () => {
         { data: "...", url: "/cal/new-evt.ics", etag: '"e1"' },
       ]);
 
-      const result = await service.createEvent("mailbox/Work", "BEGIN:VCALENDAR\nEND:VCALENDAR", "new-evt");
+      const result = await service.createEvent(
+        "mailbox/Work",
+        "BEGIN:VCALENDAR\nEND:VCALENDAR",
+        "new-evt",
+      );
 
       expect(result.uid).toBe("new-evt");
       expect(result.title).toBe("New Event");
@@ -278,7 +282,11 @@ describe("CalDavService", () => {
         { data: "...", url: "/cal/evt-1.ics", etag: '"e2"' },
       ]);
 
-      const result = await service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR");
+      const result = await service.updateEvent(
+        "mailbox/Work",
+        "evt-1",
+        "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR",
+      );
 
       expect(result.uid).toBe("evt-1");
       expect(result.title).toBe("Updated Meeting");

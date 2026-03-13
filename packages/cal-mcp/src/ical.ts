@@ -12,7 +12,12 @@ export interface ParsedEvent {
   status: string | null;
   availability: string | null;
   url: string | null;
-  attendees: Array<{ name: string | null; email: string; status: string | null; role: string | null }>;
+  attendees: Array<{
+    name: string | null;
+    email: string;
+    status: string | null;
+    role: string | null;
+  }>;
   organizer: { name: string | null; email: string } | null;
   recurrence_rule: string | null;
   created: string | null;

@@ -70,7 +70,13 @@ describe("calendarTools", () => {
   describe("handleCalendarTool", () => {
     it("list_calendars wraps in { calendars } envelope", async () => {
       mockService.listCalendars.mockResolvedValue([
-        { calendar_id: "mailbox/Work", display_name: "Work", color: null, source: "mailbox", read_only: false },
+        {
+          calendar_id: "mailbox/Work",
+          display_name: "Work",
+          color: null,
+          source: "mailbox",
+          read_only: false,
+        },
       ]);
 
       const result = await handleCalendarTool("list_calendars", {}, mockService as any);
@@ -114,7 +120,12 @@ describe("calendarTools", () => {
 
       const result = await handleCalendarTool(
         "create_event",
-        { calendar: "mailbox/Work", title: "New Event", start: "2026-03-10T14:00:00Z", end: "2026-03-10T15:00:00Z" },
+        {
+          calendar: "mailbox/Work",
+          title: "New Event",
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+        },
         mockService as any,
       );
 
@@ -157,7 +168,9 @@ describe("calendarTools", () => {
 
     it("update_event returns not_implemented for span this on recurring event", async () => {
       mockService.getEvent.mockResolvedValue({
-        uid: "evt-1", title: "Weekly", is_recurring: true,
+        uid: "evt-1",
+        title: "Weekly",
+        is_recurring: true,
         recurrence_rule: "FREQ=WEEKLY",
       });
 
@@ -174,12 +187,21 @@ describe("calendarTools", () => {
 
     it("update_event succeeds with span this on non-recurring event", async () => {
       mockService.getEvent.mockResolvedValue({
-        uid: "evt-1", title: "Meeting", is_recurring: false, recurrence_rule: null,
-        start: "2026-03-10T14:00:00Z", end: "2026-03-10T15:00:00Z", all_day: false,
-        location: null, description: null, attendees: [],
+        uid: "evt-1",
+        title: "Meeting",
+        is_recurring: false,
+        recurrence_rule: null,
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        all_day: false,
+        location: null,
+        description: null,
+        attendees: [],
       });
       mockService.updateEvent.mockResolvedValue({
-        uid: "evt-1", title: "Updated Meeting", is_recurring: false,
+        uid: "evt-1",
+        title: "Updated Meeting",
+        is_recurring: false,
       });
 
       const result = await handleCalendarTool(
@@ -194,9 +216,7 @@ describe("calendarTools", () => {
     });
 
     it("find_free_slots wraps in { slots, count } envelope", async () => {
-      mockService.listCalendars.mockResolvedValue([
-        { calendar_id: "mailbox/Work" },
-      ]);
+      mockService.listCalendars.mockResolvedValue([{ calendar_id: "mailbox/Work" }]);
       mockService.findFreeSlots.mockResolvedValue([
         { start: "2026-03-10T10:00:00Z", end: "2026-03-10T12:00:00Z", duration: 120 },
       ]);
