@@ -1,6 +1,6 @@
 {
   "name": "@miguelarios/card-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP server for contacts via CardDAV — CRUD contacts, search, resolve names to emails",
   "keywords": ["mcp", "contacts", "carddav", "vcard"],
   "license": "MIT",
