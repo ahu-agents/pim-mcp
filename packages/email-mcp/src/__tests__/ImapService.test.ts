@@ -232,6 +232,56 @@ describe("ImapService", () => {
       );
     });
 
+    it("intersects UIDs when criteria has duplicate keys (multi-word subject)", async () => {
+      // First search: subject "dinner" → UIDs [101, 102, 103]
+      mockSearch.mockResolvedValueOnce([101, 102, 103]);
+      // Second search: subject "movie" → UIDs [102, 103, 104]
+      mockSearch.mockResolvedValueOnce([102, 103, 104]);
+
+      const messages = [
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "Dinner and a movie",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-04"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 103,
+          envelope: {
+            messageId: "<msg-103@test.com>",
+            subject: "Movie dinner plans",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "d@test.com", name: "D" }],
+            date: new Date("2026-03-03"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", { subject: "dinner movie" });
+
+      // Should have called search twice — once per token
+      expect(mockSearch).toHaveBeenCalledTimes(2);
+      expect(mockSearch).toHaveBeenCalledWith({ subject: "dinner" }, { uid: true });
+      expect(mockSearch).toHaveBeenCalledWith({ subject: "movie" }, { uid: true });
+
+      // Should return only the intersection: UIDs 102 and 103
+      expect(results).toHaveLength(2);
+      expect(results.map((r) => r.uid).sort()).toEqual([102, 103]);
+    });
+
     it("Tier 3: fetches only the paginated slice when >1000 UIDs are returned", async () => {
       // Generate 1500 ascending UIDs: [1, 2, ..., 1500]
       const allUids = Array.from({ length: 1500 }, (_, i) => i + 1);

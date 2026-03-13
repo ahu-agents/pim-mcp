@@ -9,7 +9,7 @@ export const EMAIL_TOOLS: Tool[] = [
   {
     name: "search_emails",
     description:
-      "Search and list emails in a folder. Returns email summaries sorted by date (newest first). All filters combine with AND logic. String params support keyword matching (space-separated words) and exact phrases (use quotes).",
+      "Search and list emails in a folder. Returns email summaries sorted by date (newest first). All filters combine with AND logic. Use the dedicated fields (subject, from, to, etc.) for most searches.",
     inputSchema: {
       type: "object",
       properties: {
@@ -17,34 +17,36 @@ export const EMAIL_TOOLS: Tool[] = [
           type: "string",
           description: 'IMAP folder path. Defaults to "INBOX".',
         },
-        query: {
+        subject: {
           type: "string",
           description:
-            'Search subject and body. Supports -term for exclusion. Examples: "budget", "dinner -movie".',
-        },
-        body: {
-          type: "string",
-          description: "Search body text only.",
+            "Search subject line. Multiple words are ANDed (each word must appear). Use quotes for exact phrase: '\"weekly report\"'.",
         },
         from: {
           type: "string",
-          description: "Match sender name or email address.",
+          description: "Match sender name or email address (substring match).",
         },
         to: {
           type: "string",
-          description: "Match recipient name or email address.",
+          description: "Match recipient name or email address (substring match).",
         },
         cc: {
           type: "string",
-          description: "Match CC recipient.",
+          description: "Match CC recipient (substring match).",
         },
         bcc: {
           type: "string",
-          description: "Match BCC recipient.",
+          description: "Match BCC recipient (substring match).",
         },
-        subject: {
+        body: {
           type: "string",
-          description: "Match subject line.",
+          description:
+            "Search body text. Multiple words are ANDed. Use quotes for exact phrase: '\"project update\"'.",
+        },
+        query: {
+          type: "string",
+          description:
+            'Advanced: search across subject and body with boolean logic. Supports -term for exclusion. Examples: "budget", "dinner -movie".',
         },
         since: {
           type: "string",

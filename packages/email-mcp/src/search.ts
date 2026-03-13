@@ -42,9 +42,17 @@ export function buildSearchCriteria(
 ): Record<string, unknown> | Record<string, unknown>[] {
   const criteria: Record<string, unknown>[] = [];
 
-  // Simple string fields → IMAP search keys
-  const stringFields = ["from", "to", "cc", "bcc", "subject", "body"] as const;
-  for (const field of stringFields) {
+  // Address fields → literal substring match (no tokenization)
+  const addressFields = ["from", "to", "cc", "bcc"] as const;
+  for (const field of addressFields) {
+    const value = params[field];
+    if (value === undefined) continue;
+    criteria.push({ [field]: value });
+  }
+
+  // Text fields → tokenized (spaces = AND), quotes for exact phrase
+  const textFields = ["subject", "body"] as const;
+  for (const field of textFields) {
     const value = params[field];
     if (value === undefined) continue;
     const tokens = parseTokens(value);

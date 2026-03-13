@@ -93,8 +93,26 @@ export class ImapService {
       await client.connect();
       const lock = await client.getMailboxLock(folder);
       try {
-        const searchResult = await client.search(criteria as any, { uid: true });
-        const uids = searchResult || [];
+        // imapflow's search() accepts a single SearchObject, not an array.
+        // When buildSearchCriteria returns an array (duplicate keys like
+        // multiple subject tokens), run each search separately and intersect.
+        let uids: number[];
+        if (Array.isArray(criteria)) {
+          const uidSets = await Promise.all(
+            criteria.map((c) => client.search(c as any, { uid: true })),
+          );
+          const firstSet = new Set(uidSets[0] || []);
+          for (let i = 1; i < uidSets.length; i++) {
+            const nextSet = new Set(uidSets[i] || []);
+            for (const uid of firstSet) {
+              if (!nextSet.has(uid)) firstSet.delete(uid);
+            }
+          }
+          uids = [...firstSet];
+        } else {
+          const searchResult = await client.search(criteria as any, { uid: true });
+          uids = searchResult || [];
+        }
 
         if (uids.length === 0) return [];
 
