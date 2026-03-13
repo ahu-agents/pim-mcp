@@ -1,5 +1,5 @@
 import ical from "ical-generator";
-import * as nodeIcal from "node-ical";
+import nodeIcal from "node-ical";
 
 export interface ParsedEvent {
   uid: string;
