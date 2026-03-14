@@ -82,4 +82,4 @@ Bugs found during manual testing via MCP Inspector against live CalDAV (Mailbox.
 - **Symptom:** A free slot was reported ending at 10:00 AM CT, but an actual event starts at 9:50 AM CT — a 10-minute overlap where the slot says "free" but the user is busy.
 - **Expected:** Free slots should end at or before the next event's start time.
 - **Impact:** Medium — could cause double-bookings if an agent schedules into the overlapping window.
-- **Status:** Open — needs investigation; could be related to BUG-2 (recurring event date handling) affecting the busy time calculation.
+- **Status:** FIXED — resolved by BUG-2 recurrence expansion fix. Free slot boundaries are exact.

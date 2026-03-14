@@ -562,6 +562,38 @@ describe("CalDavService", () => {
       expect(slots).toHaveLength(0);
     });
 
+    it("ends free slot exactly at event start time", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = (await import("../ical.js")) as any;
+
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
+      ]);
+      parseIcsEvents.mockReturnValue([
+        {
+          uid: "odd-time",
+          title: "Odd Time Event",
+          start: "2026-03-15T14:50:00.000Z",
+          end: "2026-03-15T16:00:00.000Z",
+          all_day: false,
+          status: "confirmed",
+          availability: "busy",
+        },
+      ]);
+
+      const slots = await service.findFreeSlots(
+        ["mailbox/Work"],
+        "2026-03-15T13:00:00Z",
+        "2026-03-15T17:00:00Z",
+        30,
+      );
+
+      // First free slot should end exactly at 14:50
+      expect(slots[0].end).toBe("2026-03-15T14:50:00.000Z");
+      // Second free slot should start at 16:00
+      expect(slots[1].start).toBe("2026-03-15T16:00:00.000Z");
+    });
+
     it("sorts preferred-hours slots first", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = (await import("../ical.js")) as any;
