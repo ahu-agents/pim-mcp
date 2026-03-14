@@ -40,6 +40,7 @@ export interface EventCreateProps {
   description?: string;
   attendees?: Array<{ email: string; name?: string }>;
   uid?: string;
+  timezone?: string;
 }
 
 export function parseIcsEvents(icsContent: string, range?: TimeRange, timezone?: string): ParsedEvent[] {
@@ -161,6 +162,10 @@ export function generateEventIcs(props: EventCreateProps): string {
 
   if (props.uid) {
     event.uid(props.uid);
+  }
+
+  if (props.timezone) {
+    event.timezone(props.timezone);
   }
 
   if (props.attendees) {

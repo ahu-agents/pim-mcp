@@ -1,4 +1,4 @@
-import { toPimError } from "@miguelarios/pim-core";
+import { getTimezone, toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { generateEventIcs, parseIcsEvents } from "../ical.js";
 import type { CalDavService, EventSummary } from "../services/CalDavService.js";
@@ -490,6 +490,7 @@ export async function handleCalendarTool(
           location: args.location as string | undefined,
           description: args.description as string | undefined,
           attendees: args.attendees as Array<{ email: string; name?: string }> | undefined,
+          timezone: getTimezone(),
         });
         const uidMatch = icsString.match(/UID:(.+)/);
         const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
@@ -522,6 +523,7 @@ export async function handleCalendarTool(
               email: a.email,
               name: a.name ?? undefined,
             })),
+          timezone: getTimezone(),
         });
         const event = await service.updateEvent(
           args.calendar as string,
@@ -558,7 +560,7 @@ export async function handleCalendarTool(
         }>;
         const createdEvents = [];
         for (const input of eventInputs) {
-          const icsString = generateEventIcs(input);
+          const icsString = generateEventIcs({ ...input, timezone: getTimezone() });
           const uidMatch = icsString.match(/UID:(.+)/);
           const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
           const event = await service.createEvent(args.calendar as string, icsString, uid);

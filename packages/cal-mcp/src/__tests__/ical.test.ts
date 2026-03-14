@@ -312,4 +312,26 @@ describe("generateEventIcs", () => {
     });
     expect(ics).toMatch(/UID:.+/);
   });
+
+  describe("timezone in generated ICS", () => {
+    it("generates ICS with user timezone when timezone is provided", () => {
+      const ics = generateEventIcs({
+        title: "Chicago Meeting",
+        start: "2026-03-14T15:00:00Z",
+        end: "2026-03-14T16:00:00Z",
+        timezone: "America/Chicago",
+      });
+      expect(ics).toContain("TZID=America/Chicago");
+      expect(ics).not.toContain("DTSTART:20260314T150000Z");
+    });
+
+    it("generates UTC ICS when no timezone is provided", () => {
+      const ics = generateEventIcs({
+        title: "UTC Meeting",
+        start: "2026-03-14T15:00:00Z",
+        end: "2026-03-14T16:00:00Z",
+      });
+      expect(ics).toContain("20260314T150000Z");
+    });
+  });
 });
