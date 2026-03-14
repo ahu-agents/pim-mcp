@@ -257,6 +257,7 @@ describe("generateEventIcs", () => {
     expect(ics).toContain("BEGIN:VCALENDAR");
     expect(ics).toContain("BEGIN:VEVENT");
     expect(ics).toContain("Test Event");
+    expect(ics).toContain("STATUS:CONFIRMED");
     expect(ics).toContain("END:VEVENT");
     expect(ics).toContain("END:VCALENDAR");
   });

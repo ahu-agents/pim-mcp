@@ -1,5 +1,5 @@
 import { formatInTimezone } from "@miguelarios/pim-core";
-import ical from "ical-generator";
+import ical, { ICalEventStatus } from "ical-generator";
 import nodeIcal from "node-ical";
 
 export interface ParsedEvent {
@@ -166,6 +166,7 @@ export function generateEventIcs(props: EventCreateProps): string {
   if (props.description) eventOptions.description = props.description;
 
   const event = calendar.createEvent(eventOptions);
+  event.status(ICalEventStatus.CONFIRMED);
 
   if (props.uid) {
     event.uid(props.uid);
