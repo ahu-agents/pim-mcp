@@ -1,13 +1,10 @@
 export function getTimezone(): string {
   const envTz = process.env.PIM_TIMEZONE;
-  if (envTz && envTz.trim()) return envTz.trim();
+  if (envTz?.trim()) return envTz.trim();
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-export function formatInTimezone(
-  isoUtcString: string,
-  timezone: string,
-): string {
+export function formatInTimezone(isoUtcString: string, timezone: string): string {
   const date = new Date(isoUtcString);
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
@@ -22,8 +19,7 @@ export function formatInTimezone(
   });
 
   const parts = formatter.formatToParts(date);
-  const get = (type: string) =>
-    parts.find((p) => p.type === type)?.value ?? "";
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
 
   const year = get("year");
   const month = get("month");

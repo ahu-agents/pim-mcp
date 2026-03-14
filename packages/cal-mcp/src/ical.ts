@@ -43,7 +43,11 @@ export interface EventCreateProps {
   timezone?: string;
 }
 
-export function parseIcsEvents(icsContent: string, range?: TimeRange, timezone?: string): ParsedEvent[] {
+export function parseIcsEvents(
+  icsContent: string,
+  range?: TimeRange,
+  timezone?: string,
+): ParsedEvent[] {
   if (!icsContent.trim()) return [];
 
   const formatTime = (isoString: string): string => {
@@ -71,7 +75,8 @@ export function parseIcsEvents(icsContent: string, range?: TimeRange, timezone?:
             ? att.replace("mailto:", "")
             : (att.val || "").replace("mailto:", "");
         const name = typeof att === "string" ? null : (att.params?.CN ?? null);
-        const status = typeof att === "string" ? null : (att.params?.PARTSTAT?.toLowerCase() ?? null);
+        const status =
+          typeof att === "string" ? null : (att.params?.PARTSTAT?.toLowerCase() ?? null);
         const role = typeof att === "string" ? null : (att.params?.ROLE?.toLowerCase() ?? null);
         attendees.push({ email, name, status, role });
       }
@@ -109,7 +114,9 @@ export function parseIcsEvents(icsContent: string, range?: TimeRange, timezone?:
       organizer: organizer ?? null,
       recurrence_rule: vevent.rrule?.toString() ?? null,
       created: vevent.created ? formatTime(new Date(vevent.created).toISOString()) : null,
-      last_modified: vevent.lastmodified ? formatTime(new Date(vevent.lastmodified).toISOString()) : null,
+      last_modified: vevent.lastmodified
+        ? formatTime(new Date(vevent.lastmodified).toISOString())
+        : null,
       is_recurring: !!vevent.rrule,
     };
 

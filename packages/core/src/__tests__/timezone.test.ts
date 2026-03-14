@@ -26,32 +26,20 @@ describe("getTimezone", () => {
 
 describe("formatInTimezone", () => {
   it("converts UTC date to timezone offset string", () => {
-    const result = formatInTimezone(
-      "2026-03-14T15:00:00.000Z",
-      "America/Chicago",
-    );
+    const result = formatInTimezone("2026-03-14T15:00:00.000Z", "America/Chicago");
     expect(result).toBe("2026-03-14T10:00:00-05:00");
   });
 
   it("handles DST transitions correctly", () => {
-    const winter = formatInTimezone(
-      "2026-01-15T18:00:00.000Z",
-      "America/Chicago",
-    );
+    const winter = formatInTimezone("2026-01-15T18:00:00.000Z", "America/Chicago");
     expect(winter).toBe("2026-01-15T12:00:00-06:00");
 
-    const summer = formatInTimezone(
-      "2026-07-15T17:00:00.000Z",
-      "America/Chicago",
-    );
+    const summer = formatInTimezone("2026-07-15T17:00:00.000Z", "America/Chicago");
     expect(summer).toBe("2026-07-15T12:00:00-05:00");
   });
 
   it("works with non-US timezones", () => {
-    const result = formatInTimezone(
-      "2026-03-14T15:00:00.000Z",
-      "Europe/Berlin",
-    );
+    const result = formatInTimezone("2026-03-14T15:00:00.000Z", "Europe/Berlin");
     expect(result).toBe("2026-03-14T16:00:00+01:00");
   });
 });
