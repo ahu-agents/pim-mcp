@@ -616,4 +616,39 @@ describe("CalDavService", () => {
       expect(firstSlotHour).toBeGreaterThanOrEqual(9);
     });
   });
+
+  describe("client caching", () => {
+    it("reuses authenticated client across multiple calls for same account", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = (await import("../ical.js")) as any;
+
+      // Setup mock data for listEvents
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "ics-data", url: "/cal/evt.ics", etag: '"e1"' },
+      ]);
+      parseIcsEvents.mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          status: null,
+          is_recurring: false,
+        },
+      ]);
+
+      const loginSpy = __mockClient.login;
+      loginSpy.mockClear();
+
+      // Three calls to the same account
+      await service.listEvents("mailbox/Work", "2026-03-01", "2026-03-31");
+      await service.listEvents("mailbox/Work", "2026-04-01", "2026-04-30");
+      await service.listEvents("mailbox/Work", "2026-05-01", "2026-05-31");
+
+      // Should only login once (cached after first call)
+      expect(loginSpy).toHaveBeenCalledTimes(1);
+    });
+  });
 });

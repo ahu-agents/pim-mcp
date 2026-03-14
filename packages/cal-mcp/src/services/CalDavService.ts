@@ -62,6 +62,7 @@ export interface FindFreeSlotsOptions {
 
 export class CalDavService {
   private accounts: Map<string, CalDavAccount>;
+  private clients: Map<string, DAVClient> = new Map();
 
   constructor(config: CalDavConfig) {
     this.accounts = new Map(config.accounts.map((a) => [a.id, a]));
@@ -77,6 +78,16 @@ export class CalDavService {
       authMethod: "Basic",
       defaultAccountType: "caldav",
     });
+  }
+
+  private async getClient(account: CalDavAccount): Promise<DAVClient> {
+    const existing = this.clients.get(account.id);
+    if (existing) return existing;
+
+    const client = this.createClient(account);
+    await client.login();
+    this.clients.set(account.id, client);
+    return client;
   }
 
   private resolveAccount(calendarId: string): {
@@ -137,9 +148,8 @@ export class CalDavService {
     const allCalendars: CalendarInfo[] = [];
 
     for (const [providerId, account] of this.accounts) {
-      const client = this.createClient(account);
       try {
-        await client.login();
+        const client = await this.getClient(account);
         const calendars = await client.fetchCalendars();
         for (const cal of calendars) {
           const displayName = (typeof cal.displayName === "string" ? cal.displayName : "") || "";
@@ -163,10 +173,9 @@ export class CalDavService {
 
   async listEvents(calendarId: string, start: string, end: string): Promise<EventSummary[]> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
 
       const objects = await client.fetchCalendarObjects({
@@ -203,10 +212,9 @@ export class CalDavService {
 
   async getEvent(calendarId: string, uid: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
       const parsed = parseIcsEvents(obj.data!);
@@ -242,10 +250,9 @@ export class CalDavService {
 
   async createEvent(calendarId: string, icalString: string, uid: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       await client.createCalendarObject({
         calendar,
@@ -261,10 +268,9 @@ export class CalDavService {
 
   async updateEvent(calendarId: string, uid: string, icalString: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
       await client.updateCalendarObject({
@@ -283,10 +289,9 @@ export class CalDavService {
 
   async deleteEvent(calendarId: string, uid: string): Promise<void> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
       await client.deleteCalendarObject({
@@ -324,8 +329,7 @@ export class CalDavService {
 
       try {
         const { account, calendarName } = this.resolveAccount(calendarId);
-        const client = this.createClient(account);
-        await client.login();
+        const client = await this.getClient(account);
         const calendar = await this.findCalendar(client, calendarName, account.id);
         const objects = await client.fetchCalendarObjects({
           calendar,
