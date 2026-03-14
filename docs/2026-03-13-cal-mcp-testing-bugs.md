@@ -18,7 +18,7 @@ Bugs found during manual testing via MCP Inspector against live CalDAV (Mailbox.
   - "Plan Birthday" (original 2025-06-04) returned in a search with 90-day default range (~2025-12-14 to ~2026-06-11)
 - **Expected:** Expand recurrences into individual occurrences within the time range with correct dates.
 - **Impact:** High — agents see wrong dates for recurring events, leading to confusion and potential scheduling errors.
-- **Status:** Open
+- **Status:** FIXED in cal-mcp@0.4.0 — `parseIcsEvents` now expands recurring events via `rrule.between()` within the queried time range. Known limitation: EXDATE (cancelled occurrences) not handled.
 
 ## BUG-3: No timezone support — events created with GMT metadata
 
@@ -32,7 +32,7 @@ Bugs found during manual testing via MCP Inspector against live CalDAV (Mailbox.
   - Both options should be supported — UTC input gets the user's default TZ, explicit TZ input is used as-is.
 - **Implementation:** Detect user timezone from OS (`Intl.DateTimeFormat().resolvedOptions().timeZone`) with optional `PIM_TIMEZONE` env var override. Apply to both cal-mcp and email-mcp.
 - **Impact:** Medium-high — agents and users see confusing UTC times; created events show wrong timezone origin.
-- **Status:** Open
+- **Status:** FIXED in pim-core@0.3.0 + cal-mcp@0.4.0 — timezone detection via `Intl`/`PIM_TIMEZONE` env var, read path formats output in local TZ, write path sets TZID on ICS events. Email-mcp changes deferred.
 
 ## BUG-4: Attendee status and role always null
 
@@ -40,7 +40,7 @@ Bugs found during manual testing via MCP Inspector against live CalDAV (Mailbox.
 - **Symptom:** `attendees[].status` and `attendees[].role` are always `null`, even when the ICS has `PARTSTAT=ACCEPTED` and `ROLE=REQ-PARTICIPANT`.
 - **Cause:** `src/ical.ts` line 62 hardcodes `status: null, role: null` instead of reading `att.params?.PARTSTAT` and `att.params?.ROLE`.
 - **Impact:** Agents can't tell if attendees accepted/declined, making RSVP-related queries impossible.
-- **Status:** Open
+- **Status:** FIXED in cal-mcp@0.4.0 — reads `att.params.PARTSTAT` and `att.params.ROLE`, lowercased.
 
 ## BUG-6: update_event silently fails — generates ICS with wrong UID
 
@@ -49,7 +49,7 @@ Bugs found during manual testing via MCP Inspector against live CalDAV (Mailbox.
 - **Cause:** `generateEventIcs()` doesn't accept or set the event UID — `ical-generator` assigns a new random UID. The CalDAV server receives an ICS with a mismatched UID and likely rejects or ignores the update. The handler then re-fetches the original event by UID (line 277 in CalDavService.ts), returning stale data that looks like success.
 - **Fix:** Pass the existing UID into `generateEventIcs()` and set it on the ical-generator event object.
 - **Impact:** High — update_event is completely broken. No events can be updated.
-- **Status:** Open
+- **Status:** FIXED in cal-mcp@0.4.0 — `generateEventIcs` now accepts and sets custom UID via `event.uid()`.
 
 ## BUG-7: DAVClient login not cached — redundant auth on every call
 
@@ -57,8 +57,8 @@ Bugs found during manual testing via MCP Inspector against live CalDAV (Mailbox.
 - **Symptom:** Every method in `CalDavService` creates a new `DAVClient` and calls `login()`. For batch operations this means N logins for N events. Single operations do login + find calendar + action + re-fetch (4 round trips minimum).
 - **Expected:** Cache the authenticated client per account for the lifetime of the MCP server process, or at minimum reuse within a single tool call (e.g., batch create).
 - **Impact:** Medium — causes noticeable latency on every operation, compounds for batch tools.
-- **Note:** card-mcp likely has the same issue (also uses tsdav). email-mcp is faster because imapflow manages its own connection. A shared `DavClientPool` in pim-core could serve both cal-mcp and card-mcp, but a simpler first step is caching the logged-in client per account within each service class instance.
-- **Status:** Open
+- **Note:** card-mcp likely has the same issue (also uses tsdav). email-mcp is faster because imapflow manages its own connection.
+- **Status:** FIXED in cal-mcp@0.4.0 — `getClient()` caches authenticated DAVClient per account ID. No TTL; acceptable for short-lived MCP processes.
 
 ## BUG-8: create_events_batch schema missing field descriptions and required markers
 
@@ -66,7 +66,7 @@ Bugs found during manual testing via MCP Inspector against live CalDAV (Mailbox.
 - **Symptom:** The `events` array items schema has bare `{ type: "string" }` for fields with no descriptions. The `required` array exists but field descriptions are missing, so agents have no guidance on formats (e.g., ISO 8601 for dates).
 - **Expected:** Add descriptions and `required: ["title", "start", "end"]` to the items schema, matching create_event.
 - **Impact:** Low-medium — agents may omit required fields or use wrong formats.
-- **Status:** Open
+- **Status:** FIXED in cal-mcp@0.4.0 — added field descriptions matching create_event schema.
 
 ## BUG-5: Inconsistent parameter names across tools
 
