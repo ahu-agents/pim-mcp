@@ -80,6 +80,46 @@ describe("parseIcsEvents", () => {
     expect(events[0].title).toBe("Company Holiday");
   });
 
+  it("parses attendee PARTSTAT and ROLE", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:attendee-test",
+      "DTSTART:20260315T100000Z",
+      "DTEND:20260315T110000Z",
+      "SUMMARY:Meeting",
+      "ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED;ROLE=REQ-PARTICIPANT:mailto:alice@example.com",
+      "ATTENDEE;CN=Bob;PARTSTAT=DECLINED;ROLE=OPT-PARTICIPANT:mailto:bob@example.com",
+      "ATTENDEE;PARTSTAT=TENTATIVE:mailto:carol@example.com",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const events = parseIcsEvents(ics);
+    expect(events).toHaveLength(1);
+    expect(events[0].attendees).toHaveLength(3);
+
+    expect(events[0].attendees[0]).toMatchObject({
+      email: "alice@example.com",
+      name: "Alice",
+      status: "accepted",
+      role: "req-participant",
+    });
+    expect(events[0].attendees[1]).toMatchObject({
+      email: "bob@example.com",
+      name: "Bob",
+      status: "declined",
+      role: "opt-participant",
+    });
+    expect(events[0].attendees[2]).toMatchObject({
+      email: "carol@example.com",
+      name: null,
+      status: "tentative",
+      role: null,
+    });
+  });
+
   it("returns null for absent nullable fields", () => {
     const MINIMAL_ICS = `BEGIN:VCALENDAR
 VERSION:2.0

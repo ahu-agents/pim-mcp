@@ -59,7 +59,9 @@ export function parseIcsEvents(icsContent: string): ParsedEvent[] {
             ? att.replace("mailto:", "")
             : (att.val || "").replace("mailto:", "");
         const name = typeof att === "string" ? null : (att.params?.CN ?? null);
-        attendees.push({ email, name, status: null, role: null });
+        const status = typeof att === "string" ? null : (att.params?.PARTSTAT?.toLowerCase() ?? null);
+        const role = typeof att === "string" ? null : (att.params?.ROLE?.toLowerCase() ?? null);
+        attendees.push({ email, name, status, role });
       }
     }
 
