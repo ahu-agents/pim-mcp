@@ -120,6 +120,41 @@ describe("parseIcsEvents", () => {
     });
   });
 
+  it("formats event times in specified timezone", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:tz-test",
+      "DTSTART:20260314T150000Z",
+      "DTEND:20260314T160000Z",
+      "SUMMARY:TZ Test",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const events = parseIcsEvents(ics, undefined, "America/Chicago");
+    expect(events[0].start).toBe("2026-03-14T10:00:00-05:00");
+    expect(events[0].end).toBe("2026-03-14T11:00:00-05:00");
+  });
+
+  it("returns UTC when no timezone is specified", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:utc-test",
+      "DTSTART:20260314T150000Z",
+      "DTEND:20260314T160000Z",
+      "SUMMARY:UTC Test",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const events = parseIcsEvents(ics);
+    expect(events[0].start).toBe("2026-03-14T15:00:00.000Z");
+  });
+
   it("returns null for absent nullable fields", () => {
     const MINIMAL_ICS = `BEGIN:VCALENDAR
 VERSION:2.0

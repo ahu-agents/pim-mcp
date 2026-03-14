@@ -1,3 +1,4 @@
+import { formatInTimezone } from "@miguelarios/pim-core";
 import ical from "ical-generator";
 import nodeIcal from "node-ical";
 
@@ -41,8 +42,12 @@ export interface EventCreateProps {
   uid?: string;
 }
 
-export function parseIcsEvents(icsContent: string, range?: TimeRange): ParsedEvent[] {
+export function parseIcsEvents(icsContent: string, range?: TimeRange, timezone?: string): ParsedEvent[] {
   if (!icsContent.trim()) return [];
+
+  const formatTime = (isoString: string): string => {
+    return timezone ? formatInTimezone(isoString, timezone) : isoString;
+  };
 
   const parsed = nodeIcal.parseICS(icsContent);
   const events: ParsedEvent[] = [];
@@ -102,8 +107,8 @@ export function parseIcsEvents(icsContent: string, range?: TimeRange): ParsedEve
       attendees: attendees.length > 0 ? attendees : [],
       organizer: organizer ?? null,
       recurrence_rule: vevent.rrule?.toString() ?? null,
-      created: vevent.created ? new Date(vevent.created).toISOString() : null,
-      last_modified: vevent.lastmodified ? new Date(vevent.lastmodified).toISOString() : null,
+      created: vevent.created ? formatTime(new Date(vevent.created).toISOString()) : null,
+      last_modified: vevent.lastmodified ? formatTime(new Date(vevent.lastmodified).toISOString()) : null,
       is_recurring: !!vevent.rrule,
     };
 
@@ -123,16 +128,16 @@ export function parseIcsEvents(icsContent: string, range?: TimeRange): ParsedEve
         const occEnd = new Date(occStart.getTime() + duration);
         events.push({
           ...baseProps,
-          start: occStart.toISOString(),
-          end: occEnd.toISOString(),
+          start: formatTime(occStart.toISOString()),
+          end: formatTime(occEnd.toISOString()),
         });
       }
     } else {
       // Non-recurring, or no range provided — return as-is
       events.push({
         ...baseProps,
-        start: vevent.start ? new Date(vevent.start).toISOString() : "",
-        end: vevent.end ? new Date(vevent.end).toISOString() : "",
+        start: vevent.start ? formatTime(new Date(vevent.start).toISOString()) : "",
+        end: vevent.end ? formatTime(new Date(vevent.end).toISOString()) : "",
       });
     }
   }

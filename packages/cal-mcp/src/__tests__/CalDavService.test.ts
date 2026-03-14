@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CalDavService } from "../services/CalDavService.js";
 
 // Mock tsdav — same pattern as card-mcp
@@ -55,6 +55,14 @@ const TEST_CONFIG = {
 
 describe("CalDavService", () => {
   let service: CalDavService;
+
+  beforeAll(() => {
+    vi.stubEnv("PIM_TIMEZONE", "UTC");
+  });
+
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -589,9 +597,9 @@ describe("CalDavService", () => {
       );
 
       // First free slot should end exactly at 14:50
-      expect(slots[0].end).toBe("2026-03-15T14:50:00.000Z");
+      expect(slots[0].end).toBe("2026-03-15T14:50:00+00:00");
       // Second free slot should start at 16:00
-      expect(slots[1].start).toBe("2026-03-15T16:00:00.000Z");
+      expect(slots[1].start).toBe("2026-03-15T16:00:00+00:00");
     });
 
     it("sorts preferred-hours slots first", async () => {

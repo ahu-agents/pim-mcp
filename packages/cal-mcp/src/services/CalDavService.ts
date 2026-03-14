@@ -3,6 +3,8 @@ import {
   type CalDavConfig,
   CalendarError,
   ErrorCode,
+  formatInTimezone,
+  getTimezone,
   toPimError,
 } from "@miguelarios/pim-core";
 import { DAVClient } from "tsdav";
@@ -63,9 +65,11 @@ export interface FindFreeSlotsOptions {
 export class CalDavService {
   private accounts: Map<string, CalDavAccount>;
   private clients: Map<string, DAVClient> = new Map();
+  private timezone: string;
 
   constructor(config: CalDavConfig) {
     this.accounts = new Map(config.accounts.map((a) => [a.id, a]));
+    this.timezone = getTimezone();
   }
 
   private createClient(account: CalDavAccount): DAVClient {
@@ -187,7 +191,7 @@ export class CalDavService {
       const summaries: EventSummary[] = [];
       for (const obj of objects) {
         if (!obj.data) continue;
-        const parsed = parseIcsEvents(obj.data, { start, end });
+        const parsed = parseIcsEvents(obj.data, { start, end }, this.timezone);
         for (const event of parsed) {
           summaries.push({
             uid: event.uid,
@@ -217,7 +221,7 @@ export class CalDavService {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
-      const parsed = parseIcsEvents(obj.data!);
+      const parsed = parseIcsEvents(obj.data!, undefined, this.timezone);
       const event = parsed.find((e) => e.uid === uid);
       if (!event) {
         throw new CalendarError(`Event "${uid}" not found`, ErrorCode.EVENT_NOT_FOUND, uid);
@@ -497,9 +501,17 @@ export class CalDavService {
         return aDate.getTime() - bDate.getTime();
       });
 
-      return splitSlots;
+      return this.formatSlots(splitSlots);
     }
 
-    return freeSlots;
+    return this.formatSlots(freeSlots);
+  }
+
+  private formatSlots(slots: FreeSlot[]): FreeSlot[] {
+    return slots.map((s) => ({
+      start: formatInTimezone(s.start, this.timezone),
+      end: formatInTimezone(s.end, this.timezone),
+      duration: s.duration,
+    }));
   }
 }
