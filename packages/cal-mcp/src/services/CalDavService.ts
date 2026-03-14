@@ -3,10 +3,12 @@ import {
   type CalDavConfig,
   CalendarError,
   ErrorCode,
+  formatInTimezone,
+  getTimezone,
   toPimError,
 } from "@miguelarios/pim-core";
 import { DAVClient } from "tsdav";
-import { type ParsedEvent, parseIcsEvents } from "../ical.js";
+import { type ParsedEvent, type TimeRange, parseIcsEvents } from "../ical.js";
 
 export interface CalendarInfo {
   calendar_id: string;
@@ -62,9 +64,12 @@ export interface FindFreeSlotsOptions {
 
 export class CalDavService {
   private accounts: Map<string, CalDavAccount>;
+  private clients: Map<string, DAVClient> = new Map();
+  private timezone: string;
 
   constructor(config: CalDavConfig) {
     this.accounts = new Map(config.accounts.map((a) => [a.id, a]));
+    this.timezone = getTimezone();
   }
 
   private createClient(account: CalDavAccount): DAVClient {
@@ -77,6 +82,16 @@ export class CalDavService {
       authMethod: "Basic",
       defaultAccountType: "caldav",
     });
+  }
+
+  private async getClient(account: CalDavAccount): Promise<DAVClient> {
+    const existing = this.clients.get(account.id);
+    if (existing) return existing;
+
+    const client = this.createClient(account);
+    await client.login();
+    this.clients.set(account.id, client);
+    return client;
   }
 
   private resolveAccount(calendarId: string): {
@@ -137,9 +152,8 @@ export class CalDavService {
     const allCalendars: CalendarInfo[] = [];
 
     for (const [providerId, account] of this.accounts) {
-      const client = this.createClient(account);
       try {
-        await client.login();
+        const client = await this.getClient(account);
         const calendars = await client.fetchCalendars();
         for (const cal of calendars) {
           const displayName = (typeof cal.displayName === "string" ? cal.displayName : "") || "";
@@ -163,10 +177,9 @@ export class CalDavService {
 
   async listEvents(calendarId: string, start: string, end: string): Promise<EventSummary[]> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
 
       const objects = await client.fetchCalendarObjects({
@@ -178,7 +191,7 @@ export class CalDavService {
       const summaries: EventSummary[] = [];
       for (const obj of objects) {
         if (!obj.data) continue;
-        const parsed = parseIcsEvents(obj.data);
+        const parsed = parseIcsEvents(obj.data, { start, end }, this.timezone);
         for (const event of parsed) {
           summaries.push({
             uid: event.uid,
@@ -203,13 +216,12 @@ export class CalDavService {
 
   async getEvent(calendarId: string, uid: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
-      const parsed = parseIcsEvents(obj.data!);
+      const parsed = parseIcsEvents(obj.data!, undefined, this.timezone);
       const event = parsed.find((e) => e.uid === uid);
       if (!event) {
         throw new CalendarError(`Event "${uid}" not found`, ErrorCode.EVENT_NOT_FOUND, uid);
@@ -242,10 +254,9 @@ export class CalDavService {
 
   async createEvent(calendarId: string, icalString: string, uid: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       await client.createCalendarObject({
         calendar,
@@ -261,10 +272,9 @@ export class CalDavService {
 
   async updateEvent(calendarId: string, uid: string, icalString: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
       await client.updateCalendarObject({
@@ -283,10 +293,9 @@ export class CalDavService {
 
   async deleteEvent(calendarId: string, uid: string): Promise<void> {
     const { account, calendarName } = this.resolveAccount(calendarId);
-    const client = this.createClient(account);
 
     try {
-      await client.login();
+      const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
       await client.deleteCalendarObject({
@@ -324,8 +333,7 @@ export class CalDavService {
 
       try {
         const { account, calendarName } = this.resolveAccount(calendarId);
-        const client = this.createClient(account);
-        await client.login();
+        const client = await this.getClient(account);
         const calendar = await this.findCalendar(client, calendarName, account.id);
         const objects = await client.fetchCalendarObjects({
           calendar,
@@ -335,7 +343,7 @@ export class CalDavService {
 
         for (const obj of objects) {
           if (!obj.data) continue;
-          const parsed = parseIcsEvents(obj.data);
+          const parsed = parseIcsEvents(obj.data, { start, end });
           for (const event of parsed) {
             allEvents.push({
               start: event.start,
@@ -493,9 +501,17 @@ export class CalDavService {
         return aDate.getTime() - bDate.getTime();
       });
 
-      return splitSlots;
+      return this.formatSlots(splitSlots);
     }
 
-    return freeSlots;
+    return this.formatSlots(freeSlots);
+  }
+
+  private formatSlots(slots: FreeSlot[]): FreeSlot[] {
+    return slots.map((s) => ({
+      start: formatInTimezone(s.start, this.timezone),
+      end: formatInTimezone(s.end, this.timezone),
+      duration: s.duration,
+    }));
   }
 }

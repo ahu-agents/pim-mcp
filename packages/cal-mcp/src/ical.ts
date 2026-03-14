@@ -1,3 +1,4 @@
+import { formatInTimezone } from "@miguelarios/pim-core";
 import ical from "ical-generator";
 import nodeIcal from "node-ical";
 
@@ -25,6 +26,11 @@ export interface ParsedEvent {
   is_recurring: boolean;
 }
 
+export interface TimeRange {
+  start: string;
+  end: string;
+}
+
 export interface EventCreateProps {
   title: string;
   start: string;
@@ -33,10 +39,16 @@ export interface EventCreateProps {
   location?: string;
   description?: string;
   attendees?: Array<{ email: string; name?: string }>;
+  uid?: string;
+  timezone?: string;
 }
 
-export function parseIcsEvents(icsContent: string): ParsedEvent[] {
+export function parseIcsEvents(icsContent: string, range?: TimeRange, timezone?: string): ParsedEvent[] {
   if (!icsContent.trim()) return [];
+
+  const formatTime = (isoString: string): string => {
+    return timezone ? formatInTimezone(isoString, timezone) : isoString;
+  };
 
   const parsed = nodeIcal.parseICS(icsContent);
   const events: ParsedEvent[] = [];
@@ -59,7 +71,9 @@ export function parseIcsEvents(icsContent: string): ParsedEvent[] {
             ? att.replace("mailto:", "")
             : (att.val || "").replace("mailto:", "");
         const name = typeof att === "string" ? null : (att.params?.CN ?? null);
-        attendees.push({ email, name, status: null, role: null });
+        const status = typeof att === "string" ? null : (att.params?.PARTSTAT?.toLowerCase() ?? null);
+        const role = typeof att === "string" ? null : (att.params?.ROLE?.toLowerCase() ?? null);
+        attendees.push({ email, name, status, role });
       }
     }
 
@@ -81,11 +95,10 @@ export function parseIcsEvents(icsContent: string): ParsedEvent[] {
     // Detect all-day: node-ical sets datetype to "date" for VALUE=DATE
     const allDay = (vevent as any).datetype === "date";
 
-    events.push({
+    // Build base properties shared by all occurrences
+    const baseProps: Omit<ParsedEvent, "start" | "end"> = {
       uid: vevent.uid || "",
       title: vevent.summary || "",
-      start: vevent.start ? new Date(vevent.start).toISOString() : "",
-      end: vevent.end ? new Date(vevent.end).toISOString() : "",
       all_day: allDay,
       location: vevent.location ?? null,
       description: vevent.description ?? null,
@@ -95,10 +108,39 @@ export function parseIcsEvents(icsContent: string): ParsedEvent[] {
       attendees: attendees.length > 0 ? attendees : [],
       organizer: organizer ?? null,
       recurrence_rule: vevent.rrule?.toString() ?? null,
-      created: vevent.created ? new Date(vevent.created).toISOString() : null,
-      last_modified: vevent.lastmodified ? new Date(vevent.lastmodified).toISOString() : null,
+      created: vevent.created ? formatTime(new Date(vevent.created).toISOString()) : null,
+      last_modified: vevent.lastmodified ? formatTime(new Date(vevent.lastmodified).toISOString()) : null,
       is_recurring: !!vevent.rrule,
-    });
+    };
+
+    // Expand recurring events into occurrences within the requested range
+    if (vevent.rrule && range && typeof vevent.rrule.between === "function") {
+      const originalStart = new Date(vevent.start);
+      const originalEnd = new Date(vevent.end);
+      const duration = originalEnd.getTime() - originalStart.getTime();
+
+      const occurrences = vevent.rrule.between(
+        new Date(range.start),
+        new Date(range.end),
+        true, // inclusive
+      );
+
+      for (const occStart of occurrences) {
+        const occEnd = new Date(occStart.getTime() + duration);
+        events.push({
+          ...baseProps,
+          start: formatTime(occStart.toISOString()),
+          end: formatTime(occEnd.toISOString()),
+        });
+      }
+    } else {
+      // Non-recurring, or no range provided — return as-is
+      events.push({
+        ...baseProps,
+        start: vevent.start ? formatTime(new Date(vevent.start).toISOString()) : "",
+        end: vevent.end ? formatTime(new Date(vevent.end).toISOString()) : "",
+      });
+    }
   }
 
   return events;
@@ -117,6 +159,14 @@ export function generateEventIcs(props: EventCreateProps): string {
   if (props.description) eventOptions.description = props.description;
 
   const event = calendar.createEvent(eventOptions);
+
+  if (props.uid) {
+    event.uid(props.uid);
+  }
+
+  if (props.timezone) {
+    event.timezone(props.timezone);
+  }
 
   if (props.attendees) {
     for (const att of props.attendees) {

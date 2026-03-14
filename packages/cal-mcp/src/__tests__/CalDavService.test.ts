@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CalDavService } from "../services/CalDavService.js";
 
 // Mock tsdav — same pattern as card-mcp
@@ -55,6 +55,14 @@ const TEST_CONFIG = {
 
 describe("CalDavService", () => {
   let service: CalDavService;
+
+  beforeAll(() => {
+    vi.stubEnv("PIM_TIMEZONE", "UTC");
+  });
+
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -562,6 +570,38 @@ describe("CalDavService", () => {
       expect(slots).toHaveLength(0);
     });
 
+    it("ends free slot exactly at event start time", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = (await import("../ical.js")) as any;
+
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
+      ]);
+      parseIcsEvents.mockReturnValue([
+        {
+          uid: "odd-time",
+          title: "Odd Time Event",
+          start: "2026-03-15T14:50:00.000Z",
+          end: "2026-03-15T16:00:00.000Z",
+          all_day: false,
+          status: "confirmed",
+          availability: "busy",
+        },
+      ]);
+
+      const slots = await service.findFreeSlots(
+        ["mailbox/Work"],
+        "2026-03-15T13:00:00Z",
+        "2026-03-15T17:00:00Z",
+        30,
+      );
+
+      // First free slot should end exactly at 14:50
+      expect(slots[0].end).toBe("2026-03-15T14:50:00+00:00");
+      // Second free slot should start at 16:00
+      expect(slots[1].start).toBe("2026-03-15T16:00:00+00:00");
+    });
+
     it("sorts preferred-hours slots first", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = (await import("../ical.js")) as any;
@@ -582,6 +622,41 @@ describe("CalDavService", () => {
       // First slot should start at or after 09:00
       const firstSlotHour = new Date(slots[0].start).getUTCHours();
       expect(firstSlotHour).toBeGreaterThanOrEqual(9);
+    });
+  });
+
+  describe("client caching", () => {
+    it("reuses authenticated client across multiple calls for same account", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = (await import("../ical.js")) as any;
+
+      // Setup mock data for listEvents
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "ics-data", url: "/cal/evt.ics", etag: '"e1"' },
+      ]);
+      parseIcsEvents.mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          status: null,
+          is_recurring: false,
+        },
+      ]);
+
+      const loginSpy = __mockClient.login;
+      loginSpy.mockClear();
+
+      // Three calls to the same account
+      await service.listEvents("mailbox/Work", "2026-03-01", "2026-03-31");
+      await service.listEvents("mailbox/Work", "2026-04-01", "2026-04-30");
+      await service.listEvents("mailbox/Work", "2026-05-01", "2026-05-31");
+
+      // Should only login once (cached after first call)
+      expect(loginSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

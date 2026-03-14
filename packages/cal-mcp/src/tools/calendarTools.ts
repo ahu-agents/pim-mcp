@@ -1,4 +1,4 @@
-import { toPimError } from "@miguelarios/pim-core";
+import { getTimezone, toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { generateEventIcs, parseIcsEvents } from "../ical.js";
 import type { CalDavService, EventSummary } from "../services/CalDavService.js";
@@ -235,22 +235,32 @@ export const CALENDAR_TOOLS: Tool[] = [
           items: {
             type: "object",
             properties: {
-              title: { type: "string" },
-              start: { type: "string" },
-              end: { type: "string" },
-              all_day: { type: "boolean" },
-              location: { type: "string" },
-              description: { type: "string" },
+              title: { type: "string", description: "Event title" },
+              start: {
+                type: "string",
+                description: "Start time (ISO 8601)",
+              },
+              end: { type: "string", description: "End time (ISO 8601)" },
+              all_day: {
+                type: "boolean",
+                description: "All-day event flag (default: false)",
+              },
+              location: { type: "string", description: "Event location" },
+              description: {
+                type: "string",
+                description: "Event description",
+              },
               attendees: {
                 type: "array",
                 items: {
                   type: "object",
                   properties: {
-                    email: { type: "string" },
-                    name: { type: "string" },
+                    email: { type: "string", description: "Attendee email address" },
+                    name: { type: "string", description: "Attendee display name" },
                   },
                   required: ["email"],
                 },
+                description: "List of attendees",
               },
             },
             required: ["title", "start", "end"],
@@ -480,6 +490,7 @@ export async function handleCalendarTool(
           location: args.location as string | undefined,
           description: args.description as string | undefined,
           attendees: args.attendees as Array<{ email: string; name?: string }> | undefined,
+          timezone: getTimezone(),
         });
         const uidMatch = icsString.match(/UID:(.+)/);
         const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
@@ -499,6 +510,7 @@ export async function handleCalendarTool(
         }
 
         const icsString = generateEventIcs({
+          uid: args.uid as string,
           title: (args.title as string) ?? existing.title,
           start: (args.start as string) ?? existing.start,
           end: (args.end as string) ?? existing.end,
@@ -511,6 +523,7 @@ export async function handleCalendarTool(
               email: a.email,
               name: a.name ?? undefined,
             })),
+          timezone: getTimezone(),
         });
         const event = await service.updateEvent(
           args.calendar as string,
@@ -547,7 +560,7 @@ export async function handleCalendarTool(
         }>;
         const createdEvents = [];
         for (const input of eventInputs) {
-          const icsString = generateEventIcs(input);
+          const icsString = generateEventIcs({ ...input, timezone: getTimezone() });
           const uidMatch = icsString.match(/UID:(.+)/);
           const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
           const event = await service.createEvent(args.calendar as string, icsString, uid);

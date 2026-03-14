@@ -80,6 +80,81 @@ describe("parseIcsEvents", () => {
     expect(events[0].title).toBe("Company Holiday");
   });
 
+  it("parses attendee PARTSTAT and ROLE", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:attendee-test",
+      "DTSTART:20260315T100000Z",
+      "DTEND:20260315T110000Z",
+      "SUMMARY:Meeting",
+      "ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED;ROLE=REQ-PARTICIPANT:mailto:alice@example.com",
+      "ATTENDEE;CN=Bob;PARTSTAT=DECLINED;ROLE=OPT-PARTICIPANT:mailto:bob@example.com",
+      "ATTENDEE;PARTSTAT=TENTATIVE:mailto:carol@example.com",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const events = parseIcsEvents(ics);
+    expect(events).toHaveLength(1);
+    expect(events[0].attendees).toHaveLength(3);
+
+    expect(events[0].attendees[0]).toMatchObject({
+      email: "alice@example.com",
+      name: "Alice",
+      status: "accepted",
+      role: "req-participant",
+    });
+    expect(events[0].attendees[1]).toMatchObject({
+      email: "bob@example.com",
+      name: "Bob",
+      status: "declined",
+      role: "opt-participant",
+    });
+    expect(events[0].attendees[2]).toMatchObject({
+      email: "carol@example.com",
+      name: null,
+      status: "tentative",
+      role: null,
+    });
+  });
+
+  it("formats event times in specified timezone", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:tz-test",
+      "DTSTART:20260314T150000Z",
+      "DTEND:20260314T160000Z",
+      "SUMMARY:TZ Test",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const events = parseIcsEvents(ics, undefined, "America/Chicago");
+    expect(events[0].start).toBe("2026-03-14T10:00:00-05:00");
+    expect(events[0].end).toBe("2026-03-14T11:00:00-05:00");
+  });
+
+  it("returns UTC when no timezone is specified", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:utc-test",
+      "DTSTART:20260314T150000Z",
+      "DTEND:20260314T160000Z",
+      "SUMMARY:UTC Test",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const events = parseIcsEvents(ics);
+    expect(events[0].start).toBe("2026-03-14T15:00:00.000Z");
+  });
+
   it("returns null for absent nullable fields", () => {
     const MINIMAL_ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -101,6 +176,74 @@ END:VCALENDAR`;
     expect(events[0].created).toBeNull();
     expect(events[0].last_modified).toBeNull();
     expect(events[0].url).toBeNull();
+  });
+});
+
+describe("recurrence expansion", () => {
+  const weeklyIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "DTSTART:20260101T100000Z",
+    "DTEND:20260101T110000Z",
+    "RRULE:FREQ=WEEKLY;COUNT=52",
+    "SUMMARY:Weekly Standup",
+    "LOCATION:Room A",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  it("expands recurring event into occurrences within range", () => {
+    const events = parseIcsEvents(weeklyIcs, {
+      start: "2026-03-01T00:00:00Z",
+      end: "2026-03-15T00:00:00Z",
+    });
+    expect(events.length).toBe(2); // Two Thursdays in Mar 1-14
+    expect(events[0].uid).toBe("weekly-meeting");
+    expect(events[0].title).toBe("Weekly Standup");
+    expect(events[0].location).toBe("Room A");
+    expect(events[0].is_recurring).toBe(true);
+    // Each occurrence should have 1-hour duration
+    for (const evt of events) {
+      const start = new Date(evt.start).getTime();
+      const end = new Date(evt.end).getTime();
+      expect(end - start).toBe(3600000); // 1 hour
+    }
+  });
+
+  it("returns original event when no range is provided", () => {
+    const events = parseIcsEvents(weeklyIcs);
+    expect(events).toHaveLength(1);
+    expect(events[0].start).toBe("2026-01-01T10:00:00.000Z");
+  });
+
+  it("returns empty array when no occurrences fall in range", () => {
+    const events = parseIcsEvents(weeklyIcs, {
+      start: "2027-01-01T00:00:00Z",
+      end: "2027-01-31T00:00:00Z",
+    });
+    expect(events).toHaveLength(0);
+  });
+
+  it("preserves non-recurring events unchanged when range is provided", () => {
+    const singleIcs = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:single-event",
+      "DTSTART:20260310T140000Z",
+      "DTEND:20260310T150000Z",
+      "SUMMARY:One-off Meeting",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(singleIcs, {
+      start: "2026-03-01T00:00:00Z",
+      end: "2026-03-31T00:00:00Z",
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].start).toBe("2026-03-10T14:00:00.000Z");
   });
 });
 
@@ -149,5 +292,46 @@ describe("generateEventIcs", () => {
     });
     expect(ics).toContain("BEGIN:VEVENT");
     expect(ics).toContain("Day Off");
+  });
+
+  it("sets custom UID when provided", () => {
+    const ics = generateEventIcs({
+      title: "Test",
+      start: "2026-03-15T10:00:00Z",
+      end: "2026-03-15T11:00:00Z",
+      uid: "custom-uid-123",
+    });
+    expect(ics).toContain("UID:custom-uid-123");
+  });
+
+  it("auto-generates UID when not provided", () => {
+    const ics = generateEventIcs({
+      title: "Test",
+      start: "2026-03-15T10:00:00Z",
+      end: "2026-03-15T11:00:00Z",
+    });
+    expect(ics).toMatch(/UID:.+/);
+  });
+
+  describe("timezone in generated ICS", () => {
+    it("generates ICS with user timezone when timezone is provided", () => {
+      const ics = generateEventIcs({
+        title: "Chicago Meeting",
+        start: "2026-03-14T15:00:00Z",
+        end: "2026-03-14T16:00:00Z",
+        timezone: "America/Chicago",
+      });
+      expect(ics).toContain("TZID=America/Chicago");
+      expect(ics).not.toContain("DTSTART:20260314T150000Z");
+    });
+
+    it("generates UTC ICS when no timezone is provided", () => {
+      const ics = generateEventIcs({
+        title: "UTC Meeting",
+        start: "2026-03-14T15:00:00Z",
+        end: "2026-03-14T16:00:00Z",
+      });
+      expect(ics).toContain("20260314T150000Z");
+    });
   });
 });
