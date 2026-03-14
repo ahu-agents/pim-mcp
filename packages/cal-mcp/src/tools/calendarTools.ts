@@ -235,22 +235,32 @@ export const CALENDAR_TOOLS: Tool[] = [
           items: {
             type: "object",
             properties: {
-              title: { type: "string" },
-              start: { type: "string" },
-              end: { type: "string" },
-              all_day: { type: "boolean" },
-              location: { type: "string" },
-              description: { type: "string" },
+              title: { type: "string", description: "Event title" },
+              start: {
+                type: "string",
+                description: "Start time (ISO 8601)",
+              },
+              end: { type: "string", description: "End time (ISO 8601)" },
+              all_day: {
+                type: "boolean",
+                description: "All-day event flag (default: false)",
+              },
+              location: { type: "string", description: "Event location" },
+              description: {
+                type: "string",
+                description: "Event description",
+              },
               attendees: {
                 type: "array",
                 items: {
                   type: "object",
                   properties: {
-                    email: { type: "string" },
-                    name: { type: "string" },
+                    email: { type: "string", description: "Attendee email address" },
+                    name: { type: "string", description: "Attendee display name" },
                   },
                   required: ["email"],
                 },
+                description: "List of attendees",
               },
             },
             required: ["title", "start", "end"],
