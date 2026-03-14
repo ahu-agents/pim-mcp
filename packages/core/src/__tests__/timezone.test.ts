@@ -8,7 +8,8 @@ describe("getTimezone", () => {
 
   it("returns OS timezone by default", () => {
     const tz = getTimezone();
-    expect(tz).toMatch(/^[A-Za-z]+\/[A-Za-z_]+/);
+    // IANA timezone: "Area/Location" (e.g., "America/Chicago") or bare "UTC"
+    expect(tz).toMatch(/^([A-Za-z]+\/[A-Za-z_]+|UTC)$/);
   });
 
   it("returns PIM_TIMEZONE env var when set", () => {
@@ -19,7 +20,7 @@ describe("getTimezone", () => {
   it("falls back to OS timezone when PIM_TIMEZONE is empty", () => {
     vi.stubEnv("PIM_TIMEZONE", "");
     const tz = getTimezone();
-    expect(tz).toMatch(/^[A-Za-z]+\/[A-Za-z_]+/);
+    expect(tz).toMatch(/^([A-Za-z]+\/[A-Za-z_]+|UTC)$/);
   });
 });
 
