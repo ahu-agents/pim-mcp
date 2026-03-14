@@ -33,6 +33,7 @@ export interface EventCreateProps {
   location?: string;
   description?: string;
   attendees?: Array<{ email: string; name?: string }>;
+  uid?: string;
 }
 
 export function parseIcsEvents(icsContent: string): ParsedEvent[] {
@@ -119,6 +120,10 @@ export function generateEventIcs(props: EventCreateProps): string {
   if (props.description) eventOptions.description = props.description;
 
   const event = calendar.createEvent(eventOptions);
+
+  if (props.uid) {
+    event.uid(props.uid);
+  }
 
   if (props.attendees) {
     for (const att of props.attendees) {

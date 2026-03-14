@@ -499,6 +499,7 @@ export async function handleCalendarTool(
         }
 
         const icsString = generateEventIcs({
+          uid: args.uid as string,
           title: (args.title as string) ?? existing.title,
           start: (args.start as string) ?? existing.start,
           end: (args.end as string) ?? existing.end,

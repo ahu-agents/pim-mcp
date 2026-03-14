@@ -190,4 +190,23 @@ describe("generateEventIcs", () => {
     expect(ics).toContain("BEGIN:VEVENT");
     expect(ics).toContain("Day Off");
   });
+
+  it("sets custom UID when provided", () => {
+    const ics = generateEventIcs({
+      title: "Test",
+      start: "2026-03-15T10:00:00Z",
+      end: "2026-03-15T11:00:00Z",
+      uid: "custom-uid-123",
+    });
+    expect(ics).toContain("UID:custom-uid-123");
+  });
+
+  it("auto-generates UID when not provided", () => {
+    const ics = generateEventIcs({
+      title: "Test",
+      start: "2026-03-15T10:00:00Z",
+      end: "2026-03-15T11:00:00Z",
+    });
+    expect(ics).toMatch(/UID:.+/);
+  });
 });
