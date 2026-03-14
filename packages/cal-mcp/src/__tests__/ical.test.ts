@@ -144,6 +144,74 @@ END:VCALENDAR`;
   });
 });
 
+describe("recurrence expansion", () => {
+  const weeklyIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "DTSTART:20260101T100000Z",
+    "DTEND:20260101T110000Z",
+    "RRULE:FREQ=WEEKLY;COUNT=52",
+    "SUMMARY:Weekly Standup",
+    "LOCATION:Room A",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  it("expands recurring event into occurrences within range", () => {
+    const events = parseIcsEvents(weeklyIcs, {
+      start: "2026-03-01T00:00:00Z",
+      end: "2026-03-15T00:00:00Z",
+    });
+    expect(events.length).toBe(2); // Two Thursdays in Mar 1-14
+    expect(events[0].uid).toBe("weekly-meeting");
+    expect(events[0].title).toBe("Weekly Standup");
+    expect(events[0].location).toBe("Room A");
+    expect(events[0].is_recurring).toBe(true);
+    // Each occurrence should have 1-hour duration
+    for (const evt of events) {
+      const start = new Date(evt.start).getTime();
+      const end = new Date(evt.end).getTime();
+      expect(end - start).toBe(3600000); // 1 hour
+    }
+  });
+
+  it("returns original event when no range is provided", () => {
+    const events = parseIcsEvents(weeklyIcs);
+    expect(events).toHaveLength(1);
+    expect(events[0].start).toBe("2026-01-01T10:00:00.000Z");
+  });
+
+  it("returns empty array when no occurrences fall in range", () => {
+    const events = parseIcsEvents(weeklyIcs, {
+      start: "2027-01-01T00:00:00Z",
+      end: "2027-01-31T00:00:00Z",
+    });
+    expect(events).toHaveLength(0);
+  });
+
+  it("preserves non-recurring events unchanged when range is provided", () => {
+    const singleIcs = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:single-event",
+      "DTSTART:20260310T140000Z",
+      "DTEND:20260310T150000Z",
+      "SUMMARY:One-off Meeting",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(singleIcs, {
+      start: "2026-03-01T00:00:00Z",
+      end: "2026-03-31T00:00:00Z",
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].start).toBe("2026-03-10T14:00:00.000Z");
+  });
+});
+
 describe("generateEventIcs", () => {
   it("generates valid iCalendar string with required fields", () => {
     const ics = generateEventIcs({

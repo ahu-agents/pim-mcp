@@ -6,7 +6,7 @@ import {
   toPimError,
 } from "@miguelarios/pim-core";
 import { DAVClient } from "tsdav";
-import { type ParsedEvent, parseIcsEvents } from "../ical.js";
+import { type ParsedEvent, type TimeRange, parseIcsEvents } from "../ical.js";
 
 export interface CalendarInfo {
   calendar_id: string;
@@ -178,7 +178,7 @@ export class CalDavService {
       const summaries: EventSummary[] = [];
       for (const obj of objects) {
         if (!obj.data) continue;
-        const parsed = parseIcsEvents(obj.data);
+        const parsed = parseIcsEvents(obj.data, { start, end });
         for (const event of parsed) {
           summaries.push({
             uid: event.uid,
@@ -335,7 +335,7 @@ export class CalDavService {
 
         for (const obj of objects) {
           if (!obj.data) continue;
-          const parsed = parseIcsEvents(obj.data);
+          const parsed = parseIcsEvents(obj.data, { start, end });
           for (const event of parsed) {
             allEvents.push({
               start: event.start,
