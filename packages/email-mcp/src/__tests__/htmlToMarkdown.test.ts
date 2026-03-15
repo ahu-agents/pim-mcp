@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanUrl, htmlToMarkdown } from "../htmlToMarkdown.js";
 
 describe("cleanUrl", () => {
@@ -184,6 +184,104 @@ describe("htmlToMarkdown", () => {
     expect(result).toContain("eid=abc");
     expect(result).toContain("rst=1");
     expect(result).toContain("tok=xyz");
+  });
+
+  describe("DEBUG_URL_RESOLVE logging", () => {
+    // biome-ignore lint: any needed for overloaded write() signature
+    let stderrSpy: any;
+
+    beforeEach(() => {
+      stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+      stderrSpy.mockRestore();
+      vi.unstubAllEnvs();
+    });
+
+    it("logs nothing when DEBUG_URL_RESOLVE is not set", async () => {
+      mockFetch.mockImplementation(async (url: string) => ({ url }));
+      await htmlToMarkdown('<a href="https://example.com">Link</a>');
+      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      expect(output).not.toContain("[url-resolve]");
+    });
+
+    it("logs resolved URLs when DEBUG_URL_RESOLVE=1", async () => {
+      vi.stubEnv("DEBUG_URL_RESOLVE", "1");
+      mockFetch.mockImplementation(async (url: string) => {
+        if (url.includes("redirect")) return { url: "https://final.example.com/page" };
+        return { url };
+      });
+
+      await htmlToMarkdown('<a href="https://redirect.example.com/abc">Link</a>');
+      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      expect(output).toContain("[url-resolve]");
+      expect(output).toContain("https://redirect.example.com/abc");
+      expect(output).toContain("https://final.example.com/page");
+      expect(output).toContain("ms)");
+    });
+
+    it("logs TIMEOUT with threshold when fetch times out", async () => {
+      vi.stubEnv("DEBUG_URL_RESOLVE", "1");
+      mockFetch.mockImplementation(async () => {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      });
+
+      await htmlToMarkdown('<a href="https://slow.example.com/abc">Link</a>');
+      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      expect(output).toContain("TIMEOUT");
+      expect(output).toContain("5000ms");
+      expect(output).toContain("kept original");
+    });
+
+    it("logs ERROR for non-timeout failures", async () => {
+      vi.stubEnv("DEBUG_URL_RESOLVE", "1");
+      mockFetch.mockImplementation(async () => {
+        throw new TypeError("fetch failed");
+      });
+
+      await htmlToMarkdown('<a href="https://broken.example.com/abc">Link</a>');
+      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      expect(output).toContain("ERROR");
+      expect(output).toContain("fetch failed");
+      expect(output).toContain("kept original");
+    });
+
+    it("logs summary line with counts", async () => {
+      vi.stubEnv("DEBUG_URL_RESOLVE", "1");
+      let callCount = 0;
+      mockFetch.mockImplementation(async (url: string) => {
+        callCount++;
+        if (callCount === 1) return { url: "https://resolved.example.com" };
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      });
+
+      await htmlToMarkdown(
+        '<a href="https://a.example.com/1">A</a> <a href="https://b.example.com/2">B</a>',
+      );
+      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      expect(output).toContain("Summary:");
+      expect(output).toMatch(/1.*resolved/);
+      expect(output).toMatch(/1.*timeout/);
+    });
+
+    it("uses URL_RESOLVE_TIMEOUT when debug is enabled", async () => {
+      vi.stubEnv("DEBUG_URL_RESOLVE", "1");
+      vi.stubEnv("URL_RESOLVE_TIMEOUT", "15000");
+      mockFetch.mockImplementation(async () => {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      });
+
+      await htmlToMarkdown('<a href="https://slow.example.com/abc">Link</a>');
+      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      expect(output).toContain("15000ms");
+    });
   });
 
   it("dramatically reduces NYT newsletter size", async () => {

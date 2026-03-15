@@ -162,24 +162,58 @@ export async function htmlToMarkdown(html: string): Promise<string> {
 }
 
 async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
+  const debug = process.env.DEBUG_URL_RESOLVE === "1";
+  const timeoutMs = debug
+    ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || "5000", 10)
+    : 5000;
+  const log = debug
+    ? (msg: string) => process.stderr.write(`[url-resolve] ${msg}\n`)
+    : (_msg: string) => {};
+
   const resolved = new Map<string, string>();
+  let resolvedCount = 0;
+  let timeoutCount = 0;
+  let errorCount = 0;
+
   await Promise.allSettled(
     urls.map(async (url) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const start = Date.now();
       try {
         const res = await fetch(url, {
           method: "HEAD",
           redirect: "follow",
           signal: controller.signal,
         });
-        clearTimeout(timeout);
+        clearTimeout(timer);
+        const elapsed = Date.now() - start;
         resolved.set(url, res.url);
-      } catch {
-        clearTimeout(timeout);
-        resolved.set(url, url); // keep original on error
+        if (url !== res.url) {
+          log(`GET ${url} → ${res.url} (${elapsed}ms)`);
+        }
+        resolvedCount++;
+      } catch (err) {
+        clearTimeout(timer);
+        const elapsed = Date.now() - start;
+        resolved.set(url, url);
+        if (err instanceof Error && err.name === "AbortError") {
+          timeoutCount++;
+          log(`TIMEOUT ${url} after ${timeoutMs}ms (elapsed ${elapsed}ms, kept original)`);
+        } else {
+          errorCount++;
+          const reason = err instanceof Error ? err.message : String(err);
+          log(`ERROR ${url} ${reason} (${elapsed}ms, kept original)`);
+        }
       }
     }),
   );
+
+  if (debug) {
+    log(
+      `Summary: ${resolvedCount}/${urls.length} resolved, ${timeoutCount} timeout (${timeoutMs}ms), ${errorCount} errors`,
+    );
+  }
+
   return resolved;
 }
