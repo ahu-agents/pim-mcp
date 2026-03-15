@@ -138,10 +138,11 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   });
 
   // Step 4: Resolve redirect URLs
-  const urlPattern = /\[([^\]]*)\]\(([^)]+)\)/g;
+  // Use ](url) pattern to catch nested brackets like [[Image: alt]](url)
+  const urlPattern = /\]\((https?:\/\/[^)]+)\)/g;
   const urlMatches = [...markdown.matchAll(urlPattern)];
   if (urlMatches.length > 0) {
-    const urls = [...new Set(urlMatches.map((m) => m[2]))];
+    const urls = [...new Set(urlMatches.map((m) => m[1]))];
     const resolved = await resolveUrls(urls);
     for (const [original, final] of resolved) {
       if (original !== final) {
@@ -164,9 +165,10 @@ export async function htmlToMarkdown(html: string): Promise<string> {
 
 async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
   const debug = process.env.DEBUG_URL_RESOLVE === "1";
+  const defaultTimeout = 10000;
   const timeoutMs = debug
-    ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || "5000", 10)
-    : 5000;
+    ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || String(defaultTimeout), 10)
+    : defaultTimeout;
   const logFile = process.env.URL_RESOLVE_LOG || "/tmp/url-resolve.log";
   const log = debug
     ? (msg: string) => {

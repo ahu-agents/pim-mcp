@@ -150,6 +150,21 @@ describe("htmlToMarkdown", () => {
     expect(result).not.toContain("redirect.example.com");
   });
 
+  it("resolves redirect URLs in image-wrapped links (nested brackets)", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("redirect.example.com")) {
+        return { url: "https://real.example.com/page" };
+      }
+      return { url };
+    });
+
+    const result = await htmlToMarkdown(
+      '<a href="https://redirect.example.com/abc123"><img src="https://img.example.com/photo.jpg" alt="Photo" width="600" height="400"></a>',
+    );
+    expect(result).toContain("(https://real.example.com/page)");
+    expect(result).not.toContain("redirect.example.com");
+  });
+
   it("keeps original URL on fetch error", async () => {
     mockFetch.mockImplementation(async () => {
       throw new Error("Network error");
@@ -236,7 +251,7 @@ describe("htmlToMarkdown", () => {
       await htmlToMarkdown('<a href="https://slow.example.com/abc">Link</a>');
       const output = readLog();
       expect(output).toContain("TIMEOUT");
-      expect(output).toContain("5000ms");
+      expect(output).toContain("10000ms");
       expect(output).toContain("kept original");
     });
 
