@@ -307,6 +307,20 @@ export const EMAIL_TOOLS: Tool[] = [
       required: ["uid"],
     },
   },
+  {
+    name: "get_folder_status",
+    description:
+      "Get total and unread message counts for a folder via IMAP STATUS (single round-trip, no payload).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        folder: {
+          type: "string",
+          description: "IMAP folder path. Defaults to INBOX.",
+        },
+      },
+    },
+  },
 ];
 
 export async function handleEmailTool(
@@ -442,6 +456,11 @@ export async function handleEmailTool(
         const uid = args.uid as number;
         const raw = await imapService.fetchRawEmail(folder, uid);
         return ok(raw);
+      }
+
+      case "get_folder_status": {
+        const status = await imapService.getFolderStatus(folder);
+        return ok(JSON.stringify(status));
       }
 
       default:

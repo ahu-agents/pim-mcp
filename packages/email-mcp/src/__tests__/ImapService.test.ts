@@ -12,6 +12,7 @@ const mockMessageFlagsRemove = vi.fn();
 const mockList = vi.fn();
 const mockMailboxCreate = vi.fn();
 const mockDownload = vi.fn();
+const mockStatus = vi.fn();
 const mockGetMailboxLock = vi.fn();
 const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockLogout = vi.fn().mockResolvedValue(undefined);
@@ -33,6 +34,7 @@ vi.mock("imapflow", () => ({
     list: mockList,
     mailboxCreate: mockMailboxCreate,
     download: mockDownload,
+    status: mockStatus,
     mailbox: { exists: 100 },
   })),
 }));
@@ -437,6 +439,26 @@ describe("ImapService", () => {
       const raw = await service.fetchRawEmail("INBOX", 12345);
       expect(raw).toContain("From: test@test.com");
       expect(raw).toContain("Subject: Test");
+    });
+  });
+
+  describe("getFolderStatus", () => {
+    it("returns total and unseen counts", async () => {
+      mockStatus.mockResolvedValueOnce({ messages: 42, unseen: 5 });
+
+      const result = await service.getFolderStatus("INBOX");
+      expect(result).toEqual({ total: 42, unseen: 5 });
+      expect(mockStatus).toHaveBeenCalledWith("INBOX", {
+        messages: true,
+        unseen: true,
+      });
+    });
+
+    it("does not require a mailbox lock", async () => {
+      mockStatus.mockResolvedValueOnce({ messages: 0, unseen: 0 });
+
+      await service.getFolderStatus("INBOX");
+      expect(mockGetMailboxLock).not.toHaveBeenCalled();
     });
   });
 });

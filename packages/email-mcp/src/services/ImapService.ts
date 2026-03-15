@@ -369,6 +369,19 @@ export class ImapService {
       await client.logout().catch(() => {});
     }
   }
+
+  async getFolderStatus(folder: string): Promise<{ total: number; unseen: number }> {
+    const client = this.createClient();
+    try {
+      await client.connect();
+      const status = await client.status(folder, { messages: true, unseen: true });
+      return { total: status.messages ?? 0, unseen: status.unseen ?? 0 };
+    } catch (error) {
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      await client.logout().catch(() => {});
+    }
+  }
 }
 
 function hasAttachmentParts(bodyStructure: any): boolean {
