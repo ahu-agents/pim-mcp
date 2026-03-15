@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanUrl, htmlToMarkdown } from "../htmlToMarkdown.js";
 
@@ -187,23 +188,26 @@ describe("htmlToMarkdown", () => {
   });
 
   describe("DEBUG_URL_RESOLVE logging", () => {
-    // biome-ignore lint: any needed for overloaded write() signature
-    let stderrSpy: any;
+    const logFile = join(tmpdir(), `url-resolve-test-${process.pid}.log`);
 
     beforeEach(() => {
-      stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      vi.stubEnv("URL_RESOLVE_LOG", logFile);
+      if (existsSync(logFile)) unlinkSync(logFile);
     });
 
     afterEach(() => {
-      stderrSpy.mockRestore();
       vi.unstubAllEnvs();
+      if (existsSync(logFile)) unlinkSync(logFile);
     });
+
+    function readLog(): string {
+      return existsSync(logFile) ? readFileSync(logFile, "utf-8") : "";
+    }
 
     it("logs nothing when DEBUG_URL_RESOLVE is not set", async () => {
       mockFetch.mockImplementation(async (url: string) => ({ url }));
       await htmlToMarkdown('<a href="https://example.com">Link</a>');
-      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
-      expect(output).not.toContain("[url-resolve]");
+      expect(readLog()).toBe("");
     });
 
     it("logs resolved URLs when DEBUG_URL_RESOLVE=1", async () => {
@@ -214,7 +218,7 @@ describe("htmlToMarkdown", () => {
       });
 
       await htmlToMarkdown('<a href="https://redirect.example.com/abc">Link</a>');
-      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      const output = readLog();
       expect(output).toContain("[url-resolve]");
       expect(output).toContain("https://redirect.example.com/abc");
       expect(output).toContain("https://final.example.com/page");
@@ -230,7 +234,7 @@ describe("htmlToMarkdown", () => {
       });
 
       await htmlToMarkdown('<a href="https://slow.example.com/abc">Link</a>');
-      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      const output = readLog();
       expect(output).toContain("TIMEOUT");
       expect(output).toContain("5000ms");
       expect(output).toContain("kept original");
@@ -243,7 +247,7 @@ describe("htmlToMarkdown", () => {
       });
 
       await htmlToMarkdown('<a href="https://broken.example.com/abc">Link</a>');
-      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      const output = readLog();
       expect(output).toContain("ERROR");
       expect(output).toContain("fetch failed");
       expect(output).toContain("kept original");
@@ -263,7 +267,7 @@ describe("htmlToMarkdown", () => {
       await htmlToMarkdown(
         '<a href="https://a.example.com/1">A</a> <a href="https://b.example.com/2">B</a>',
       );
-      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      const output = readLog();
       expect(output).toContain("Summary:");
       expect(output).toMatch(/1.*resolved/);
       expect(output).toMatch(/1.*timeout/);
@@ -279,7 +283,7 @@ describe("htmlToMarkdown", () => {
       });
 
       await htmlToMarkdown('<a href="https://slow.example.com/abc">Link</a>');
-      const output = stderrSpy.mock.calls.map((c: any[]) => c[0]).join("");
+      const output = readLog();
       expect(output).toContain("15000ms");
     });
   });

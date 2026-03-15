@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import sanitize from "sanitize-html";
 import TurndownService from "turndown";
 
@@ -166,8 +167,16 @@ async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
   const timeoutMs = debug
     ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || "5000", 10)
     : 5000;
+  const logFile = process.env.URL_RESOLVE_LOG || "/tmp/url-resolve.log";
   const log = debug
-    ? (msg: string) => process.stderr.write(`[url-resolve] ${msg}\n`)
+    ? (msg: string) => {
+        const line = `[url-resolve] ${new Date().toISOString()} ${msg}\n`;
+        try {
+          appendFileSync(logFile, line);
+        } catch {
+          process.stderr.write(line);
+        }
+      }
     : (_msg: string) => {};
 
   const resolved = new Map<string, string>();
