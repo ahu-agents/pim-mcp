@@ -279,10 +279,8 @@ async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS && remaining.length > 0; attempt++) {
     if (attempt > 0) retryRounds++;
 
-    const results = await pooledResolve(
-      remaining,
-      POOL_SIZE,
-      (url) => fetchOne(url, timeoutMs, log),
+    const results = await pooledResolve(remaining, POOL_SIZE, (url) =>
+      fetchOne(url, timeoutMs, log),
     );
 
     const timedOut: string[] = [];
@@ -306,7 +304,8 @@ async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
 
   // remaining.length = URLs still timed out after all attempts
   if (debug) {
-    const retryInfo = retryRounds > 0 ? `, ${retryRounds} retry round${retryRounds > 1 ? "s" : ""}` : "";
+    const retryInfo =
+      retryRounds > 0 ? `, ${retryRounds} retry round${retryRounds > 1 ? "s" : ""}` : "";
     log(
       `Summary: ${totalResolved}/${urls.length} resolved, ${remaining.length} timeout (${timeoutMs}ms), ${totalErrors} errors${retryInfo}`,
     );

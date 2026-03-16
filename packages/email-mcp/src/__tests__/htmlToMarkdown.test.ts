@@ -377,9 +377,7 @@ describe("htmlToMarkdown", () => {
       throw err;
     });
 
-    const result = await htmlToMarkdown(
-      '<a href="https://always-slow.example.com/1">Link</a>',
-    );
+    const result = await htmlToMarkdown('<a href="https://always-slow.example.com/1">Link</a>');
 
     // After 3 failed attempts, keeps original URL
     expect(result).toContain("https://always-slow.example.com/1");
