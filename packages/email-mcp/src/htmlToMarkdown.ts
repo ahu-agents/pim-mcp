@@ -163,12 +163,103 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   return markdown;
 }
 
+type FetchResult =
+  | { url: string; resolved: string; status: "ok" }
+  | { url: string; resolved: string; status: "timeout" }
+  | { url: string; resolved: string; status: "error"; error: string };
+
+const POOL_SIZE = 10;
+const MAX_ATTEMPTS = 3;
+const DEFAULT_TIMEOUT = 10000;
+
+async function fetchOne(
+  url: string,
+  timeoutMs: number,
+  log: (msg: string) => void,
+): Promise<FetchResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const start = Date.now();
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const elapsed = Date.now() - start;
+    if (url !== res.url) {
+      log(`HEAD ${url} → ${res.url} (${elapsed}ms)`);
+    }
+    return { url, resolved: res.url, status: "ok" };
+  } catch (err) {
+    clearTimeout(timer);
+    const elapsed = Date.now() - start;
+    if (err instanceof Error && err.name === "AbortError") {
+      log(`TIMEOUT ${url} after ${timeoutMs}ms (elapsed ${elapsed}ms, kept original)`);
+      return { url, resolved: url, status: "timeout" };
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    log(`ERROR ${url} ${reason} (${elapsed}ms, kept original)`);
+    return { url, resolved: url, status: "error", error: reason };
+  }
+}
+
+async function pooledResolve(
+  urls: string[],
+  concurrency: number,
+  fetchFn: (url: string) => Promise<FetchResult>,
+): Promise<FetchResult[]> {
+  if (urls.length === 0) return [];
+
+  const results: FetchResult[] = [];
+  const queue = [...urls];
+  const inFlight = new Map<Promise<FetchResult>, number>();
+
+  function startNext(): void {
+    if (queue.length === 0) return;
+    const url = queue.shift()!;
+    // promise is referenced inside callbacks — safe because they run asynchronously,
+    // after inFlight.set(promise, 1) has executed
+    const promise = fetchFn(url)
+      .then((result) => {
+        inFlight.delete(promise);
+        results.push(result);
+        return result;
+      })
+      .catch((err) => {
+        // Safety net — fetchOne should never reject, but guard against it
+        inFlight.delete(promise);
+        const fallback: FetchResult = { url, resolved: url, status: "error", error: String(err) };
+        results.push(fallback);
+        return fallback;
+      });
+    inFlight.set(promise, 1);
+  }
+
+  // Fill initial slots
+  const initialBatch = Math.min(concurrency, queue.length);
+  for (let i = 0; i < initialBatch; i++) {
+    startNext();
+  }
+
+  // Process remaining URLs as slots free up
+  while (inFlight.size > 0) {
+    await Promise.race([...inFlight.keys()]);
+    // Slot freed — fill it
+    while (inFlight.size < concurrency && queue.length > 0) {
+      startNext();
+    }
+  }
+
+  return results;
+}
+
 async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
   const debug = process.env.DEBUG_URL_RESOLVE === "1";
-  const defaultTimeout = 10000;
   const timeoutMs = debug
-    ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || String(defaultTimeout), 10)
-    : defaultTimeout;
+    ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || String(DEFAULT_TIMEOUT), 10)
+    : DEFAULT_TIMEOUT;
   const logFile = process.env.URL_RESOLVE_LOG || "/tmp/url-resolve.log";
   const log = debug
     ? (msg: string) => {
@@ -182,47 +273,43 @@ async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
     : (_msg: string) => {};
 
   const resolved = new Map<string, string>();
-  let resolvedCount = 0;
-  let timeoutCount = 0;
-  let errorCount = 0;
+  let remaining = [...urls];
+  let totalResolved = 0;
+  let totalErrors = 0;
+  let retryRounds = 0;
 
-  await Promise.allSettled(
-    urls.map(async (url) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const start = Date.now();
-      try {
-        const res = await fetch(url, {
-          method: "HEAD",
-          redirect: "follow",
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-        const elapsed = Date.now() - start;
-        resolved.set(url, res.url);
-        if (url !== res.url) {
-          log(`GET ${url} → ${res.url} (${elapsed}ms)`);
-        }
-        resolvedCount++;
-      } catch (err) {
-        clearTimeout(timer);
-        const elapsed = Date.now() - start;
-        resolved.set(url, url);
-        if (err instanceof Error && err.name === "AbortError") {
-          timeoutCount++;
-          log(`TIMEOUT ${url} after ${timeoutMs}ms (elapsed ${elapsed}ms, kept original)`);
-        } else {
-          errorCount++;
-          const reason = err instanceof Error ? err.message : String(err);
-          log(`ERROR ${url} ${reason} (${elapsed}ms, kept original)`);
-        }
+  for (let attempt = 0; attempt < MAX_ATTEMPTS && remaining.length > 0; attempt++) {
+    if (attempt > 0) retryRounds++;
+
+    const results = await pooledResolve(remaining, POOL_SIZE, (url) =>
+      fetchOne(url, timeoutMs, log),
+    );
+
+    const timedOut: string[] = [];
+    for (const r of results) {
+      if (r.status === "ok") {
+        resolved.set(r.url, r.resolved);
+        totalResolved++;
+      } else if (r.status === "timeout") {
+        timedOut.push(r.url);
+        // Set fallback now — will be overwritten if a later attempt succeeds
+        resolved.set(r.url, r.resolved);
+      } else {
+        // Permanent error — don't retry
+        resolved.set(r.url, r.resolved);
+        totalErrors++;
       }
-    }),
-  );
+    }
 
+    remaining = timedOut;
+  }
+
+  // remaining.length = URLs still timed out after all attempts
   if (debug) {
+    const retryInfo =
+      retryRounds > 0 ? `, ${retryRounds} retry round${retryRounds > 1 ? "s" : ""}` : "";
     log(
-      `Summary: ${resolvedCount}/${urls.length} resolved, ${timeoutCount} timeout (${timeoutMs}ms), ${errorCount} errors`,
+      `Summary: ${totalResolved}/${urls.length} resolved, ${remaining.length} timeout (${timeoutMs}ms), ${totalErrors} errors${retryInfo}`,
     );
   }
 
