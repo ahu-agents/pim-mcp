@@ -205,12 +205,59 @@ async function fetchOne(
   }
 }
 
+async function pooledResolve(
+  urls: string[],
+  concurrency: number,
+  fetchFn: (url: string) => Promise<FetchResult>,
+): Promise<FetchResult[]> {
+  if (urls.length === 0) return [];
+
+  const results: FetchResult[] = [];
+  const queue = [...urls];
+  const inFlight = new Map<Promise<FetchResult>, number>();
+
+  function startNext(): void {
+    if (queue.length === 0) return;
+    const url = queue.shift()!;
+    const promise = fetchFn(url)
+      .then((result) => {
+        inFlight.delete(promise);
+        results.push(result);
+        return result;
+      })
+      .catch((err) => {
+        // Safety net — fetchOne should never reject, but guard against it
+        inFlight.delete(promise);
+        const fallback: FetchResult = { url, resolved: url, status: "error", error: String(err) };
+        results.push(fallback);
+        return fallback;
+      });
+    inFlight.set(promise, 1);
+  }
+
+  // Fill initial slots
+  const initialBatch = Math.min(concurrency, queue.length);
+  for (let i = 0; i < initialBatch; i++) {
+    startNext();
+  }
+
+  // Process remaining URLs as slots free up
+  while (inFlight.size > 0) {
+    await Promise.race([...inFlight.keys()]);
+    // Slot freed — fill it
+    while (inFlight.size < concurrency && queue.length > 0) {
+      startNext();
+    }
+  }
+
+  return results;
+}
+
 async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
   const debug = process.env.DEBUG_URL_RESOLVE === "1";
-  const defaultTimeout = DEFAULT_TIMEOUT;
   const timeoutMs = debug
-    ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || String(defaultTimeout), 10)
-    : defaultTimeout;
+    ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || String(DEFAULT_TIMEOUT), 10)
+    : DEFAULT_TIMEOUT;
   const logFile = process.env.URL_RESOLVE_LOG || "/tmp/url-resolve.log";
   const log = debug
     ? (msg: string) => {
@@ -225,23 +272,21 @@ async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
 
   const resolved = new Map<string, string>();
 
-  // Single pass — no pooling yet, just uses fetchOne
-  const results = await Promise.allSettled(
-    urls.map((url) => fetchOne(url, timeoutMs, log)),
+  const results = await pooledResolve(
+    urls,
+    POOL_SIZE,
+    (url) => fetchOne(url, timeoutMs, log),
   );
 
   let resolvedCount = 0;
   let timeoutCount = 0;
   let errorCount = 0;
 
-  for (const result of results) {
-    if (result.status === "fulfilled") {
-      const r = result.value;
-      resolved.set(r.url, r.resolved);
-      if (r.status === "ok") resolvedCount++;
-      else if (r.status === "timeout") timeoutCount++;
-      else errorCount++;
-    }
+  for (const r of results) {
+    resolved.set(r.url, r.resolved);
+    if (r.status === "ok") resolvedCount++;
+    else if (r.status === "timeout") timeoutCount++;
+    else errorCount++;
   }
 
   if (debug) {

@@ -315,6 +315,38 @@ describe("htmlToMarkdown", () => {
     });
   });
 
+  it("limits concurrent URL fetches to pool size", async () => {
+    let concurrent = 0;
+    let maxConcurrent = 0;
+
+    mockFetch.mockImplementation(async (url: string) => {
+      concurrent++;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      // Simulate async work so concurrency is observable
+      await new Promise((r) => setTimeout(r, 10));
+      concurrent--;
+      return { url };
+    });
+
+    // Create 25 unique URLs — more than POOL_SIZE (10)
+    const links = Array.from(
+      { length: 25 },
+      (_, i) => `<a href="https://example.com/${i}">Link ${i}</a>`,
+    ).join(" ");
+
+    await htmlToMarkdown(links);
+
+    expect(maxConcurrent).toBeLessThanOrEqual(10);
+    expect(maxConcurrent).toBeGreaterThan(1); // sanity: not accidentally serialized
+  });
+
+  it("handles emails with no links without errors", async () => {
+    mockFetch.mockImplementation(async (url: string) => ({ url }));
+    const result = await htmlToMarkdown("<p>No links here</p>");
+    expect(result).toContain("No links here");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("dramatically reduces NYT newsletter size", async () => {
     const fixturePath = resolve(__dirname, "__fixtures__/nyt-example.html");
     const html = readFileSync(fixturePath, "utf-8");
