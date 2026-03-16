@@ -137,6 +137,11 @@ export async function htmlToMarkdown(html: string): Promise<string> {
     return alt ? `[Image: ${alt}]` : "";
   });
 
+  // Step 3b: Remove ad images and logos (standalone or link-wrapped)
+  // [[Image: Ad]](url) or [Image: Ad] — exact match
+  // [[Image: *Logo]](url) or [Image: *Logo] — alt text ending in "Logo"
+  markdown = markdown.replace(/\[?\[Image: (?:Ad|[^\]]*Logo)\]\]?(?:\([^)]*\))?/g, "");
+
   // Step 4: Resolve redirect URLs
   // Use ](url) pattern to catch nested brackets like [[Image: alt]](url)
   const urlPattern = /\]\((https?:\/\/[^)]+)\)/g;

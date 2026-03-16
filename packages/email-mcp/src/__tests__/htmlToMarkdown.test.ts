@@ -135,6 +135,38 @@ describe("htmlToMarkdown", () => {
     expect(result).toContain("Content");
   });
 
+  it("strips linked ad images and their wrapping links", async () => {
+    const result = await htmlToMarkdown(
+      '<p>Content</p><a href="https://ad-tracker.example.com/click"><img src="https://ad.example.com/banner.jpg" alt="Ad" width="600" height="100"></a><p>More</p>',
+    );
+    expect(result).not.toContain("Ad");
+    expect(result).not.toContain("ad-tracker.example.com");
+    expect(result).toContain("Content");
+    expect(result).toContain("More");
+    expect(mockFetch).not.toHaveBeenCalledWith(
+      "https://ad-tracker.example.com/click",
+      expect.anything(),
+    );
+  });
+
+  it("strips linked logo images and their wrapping links", async () => {
+    const result = await htmlToMarkdown(
+      '<p>Content</p><a href="https://example.com/track"><img src="https://example.com/li.png" alt="LiveIntent Logo" width="80" height="20"></a><a href="https://example.com/choices"><img src="https://example.com/ac.png" alt="AdChoices Logo" width="80" height="20"></a>',
+    );
+    expect(result).not.toContain("Logo");
+    expect(result).not.toContain("LiveIntent");
+    expect(result).not.toContain("AdChoices");
+    expect(result).toContain("Content");
+  });
+
+  it("keeps non-ad images intact", async () => {
+    const result = await htmlToMarkdown(
+      '<img src="https://example.com/food.jpg" alt="Spring Minestrone" width="600" height="400"><p>Recipe below</p>',
+    );
+    expect(result).toContain("[Image: Spring Minestrone]");
+    expect(result).toContain("Recipe below");
+  });
+
   it("resolves redirect URLs", async () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (url === "https://redirect.example.com/abc123") {
