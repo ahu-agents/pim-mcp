@@ -340,6 +340,49 @@ describe("htmlToMarkdown", () => {
     expect(maxConcurrent).toBeGreaterThan(1); // sanity: not accidentally serialized
   });
 
+  it("retries timed-out URLs up to MAX_ATTEMPTS", async () => {
+    const attempts = new Map<string, number>();
+
+    mockFetch.mockImplementation(async (url: string) => {
+      const count = (attempts.get(url) || 0) + 1;
+      attempts.set(url, count);
+      if (url.includes("flaky") && count < 3) {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+      return { url: url.includes("flaky") ? "https://resolved.example.com" : url };
+    });
+
+    const result = await htmlToMarkdown(
+      '<a href="https://flaky.example.com/1">Flaky</a> <a href="https://ok.example.com/2">OK</a>',
+    );
+
+    // Flaky URL should have been attempted 3 times and eventually resolved
+    expect(attempts.get("https://flaky.example.com/1")).toBe(3);
+    // OK URL should only be attempted once
+    expect(attempts.get("https://ok.example.com/2")).toBe(1);
+    // Final result should contain the resolved URL
+    expect(result).toContain("https://resolved.example.com");
+  });
+
+  it("keeps original URL after MAX_ATTEMPTS exhausted", async () => {
+    mockFetch.mockImplementation(async () => {
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      throw err;
+    });
+
+    const result = await htmlToMarkdown(
+      '<a href="https://always-slow.example.com/1">Link</a>',
+    );
+
+    // After 3 failed attempts, keeps original URL
+    expect(result).toContain("https://always-slow.example.com/1");
+    // Total attempts should be MAX_ATTEMPTS = 3
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
   it("handles emails with no links without errors", async () => {
     mockFetch.mockImplementation(async (url: string) => ({ url }));
     const result = await htmlToMarkdown("<p>No links here</p>");

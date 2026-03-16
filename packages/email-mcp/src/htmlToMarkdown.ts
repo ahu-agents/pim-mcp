@@ -271,27 +271,44 @@ async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
     : (_msg: string) => {};
 
   const resolved = new Map<string, string>();
+  let remaining = [...urls];
+  let totalResolved = 0;
+  let totalErrors = 0;
+  let retryRounds = 0;
 
-  const results = await pooledResolve(
-    urls,
-    POOL_SIZE,
-    (url) => fetchOne(url, timeoutMs, log),
-  );
+  for (let attempt = 0; attempt < MAX_ATTEMPTS && remaining.length > 0; attempt++) {
+    if (attempt > 0) retryRounds++;
 
-  let resolvedCount = 0;
-  let timeoutCount = 0;
-  let errorCount = 0;
+    const results = await pooledResolve(
+      remaining,
+      POOL_SIZE,
+      (url) => fetchOne(url, timeoutMs, log),
+    );
 
-  for (const r of results) {
-    resolved.set(r.url, r.resolved);
-    if (r.status === "ok") resolvedCount++;
-    else if (r.status === "timeout") timeoutCount++;
-    else errorCount++;
+    const timedOut: string[] = [];
+    for (const r of results) {
+      if (r.status === "ok") {
+        resolved.set(r.url, r.resolved);
+        totalResolved++;
+      } else if (r.status === "timeout") {
+        timedOut.push(r.url);
+        // Set fallback now — will be overwritten if a later attempt succeeds
+        resolved.set(r.url, r.resolved);
+      } else {
+        // Permanent error — don't retry
+        resolved.set(r.url, r.resolved);
+        totalErrors++;
+      }
+    }
+
+    remaining = timedOut;
   }
 
+  // remaining.length = URLs still timed out after all attempts
   if (debug) {
+    const retryInfo = retryRounds > 0 ? `, ${retryRounds} retry round${retryRounds > 1 ? "s" : ""}` : "";
     log(
-      `Summary: ${resolvedCount}/${urls.length} resolved, ${timeoutCount} timeout (${timeoutMs}ms), ${errorCount} errors`,
+      `Summary: ${totalResolved}/${urls.length} resolved, ${remaining.length} timeout (${timeoutMs}ms), ${totalErrors} errors${retryInfo}`,
     );
   }
 
