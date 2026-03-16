@@ -54,7 +54,7 @@ type FetchResult =
 
 Uses `AbortController` with the given timeout, same as current implementation. On timeout/error, `resolved` is set to the original URL (fallback).
 
-**`pooledResolve(urls, concurrency, fetchFn)`** — Unexported helper that implements the sliding window. Accepts a fetch function and returns an array of `FetchResult`. Manages in-flight promises via `Promise.race()`, starting a new fetch each time one settles. Returns immediately if `urls` is empty.
+**`pooledResolve(urls, concurrency, fetchFn)`** — Unexported helper that implements the sliding window. Accepts a fetch function and returns an array of `FetchResult` in completion order (natural for sliding window, no re-sorting needed). Manages in-flight promises via `Promise.race()`, starting a new fetch each time one settles. Returns immediately if `urls` is empty.
 
 **`resolveUrls(urls)`** — Orchestrates the retry loop:
 1. Call `pooledResolve` with all URLs
@@ -65,7 +65,7 @@ Uses `AbortController` with the given timeout, same as current implementation. O
 
 ### Debug Logging
 
-Existing `DEBUG_URL_RESOLVE`, `URL_RESOLVE_LOG`, and `URL_RESOLVE_TIMEOUT` env vars continue to work as before. Both failed and successful attempts are logged individually. Summary log updated to include retry information:
+Existing `DEBUG_URL_RESOLVE`, `URL_RESOLVE_LOG`, and `URL_RESOLVE_TIMEOUT` env vars continue to work as before. `URL_RESOLVE_TIMEOUT` applies per individual attempt — with `MAX_ATTEMPTS = 3` a single URL could block for up to 30s total across retries. Both failed and successful attempts are logged individually. Summary log updated to include retry information:
 
 ```
 Summary: 40/42 resolved, 2 timeout (10000ms), 0 errors, 1 retry round
@@ -87,4 +87,4 @@ With 42 URLs, pool size 10, and individual URLs taking 4.5–9.5s:
 - Unit test: successful URLs from first pass are not re-attempted
 - Unit test: final map falls back to original URL after `MAX_ATTEMPTS` exhausted
 - Unit test: empty URL list returns immediately
-- Existing `htmlToMarkdown` tests continue to pass (they mock fetch); update timeout assertion in debug log test if it references the timeout value
+- Existing `htmlToMarkdown` tests continue to pass (they mock fetch); the "logs summary line with counts" test will need its mock adjusted since timed-out URLs will now be retried (additional `mockFetch` calls from retry rounds)
