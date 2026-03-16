@@ -174,6 +174,18 @@ describe("htmlToMarkdown", () => {
     expect(result).toContain("[Link](https://example.com/page)");
   });
 
+  it("does not retry permanent fetch errors", async () => {
+    let callCount = 0;
+    mockFetch.mockImplementation(async () => {
+      callCount++;
+      throw new TypeError("fetch failed");
+    });
+
+    await htmlToMarkdown('<a href="https://broken.example.com/1">Link</a>');
+    // Should only be called once — permanent errors are not retried
+    expect(callCount).toBe(1);
+  });
+
   it("strips tracking params from resolved URLs", async () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (url.includes("redirect.example.com")) {

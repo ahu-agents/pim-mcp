@@ -163,9 +163,51 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   return markdown;
 }
 
+type FetchResult =
+  | { url: string; resolved: string; status: "ok" }
+  | { url: string; resolved: string; status: "timeout" }
+  | { url: string; resolved: string; status: "error"; error: string };
+
+const POOL_SIZE = 10;
+const MAX_ATTEMPTS = 3;
+const DEFAULT_TIMEOUT = 10000;
+
+async function fetchOne(
+  url: string,
+  timeoutMs: number,
+  log: (msg: string) => void,
+): Promise<FetchResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const start = Date.now();
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const elapsed = Date.now() - start;
+    if (url !== res.url) {
+      log(`HEAD ${url} → ${res.url} (${elapsed}ms)`);
+    }
+    return { url, resolved: res.url, status: "ok" };
+  } catch (err) {
+    clearTimeout(timer);
+    const elapsed = Date.now() - start;
+    if (err instanceof Error && err.name === "AbortError") {
+      log(`TIMEOUT ${url} after ${timeoutMs}ms (elapsed ${elapsed}ms, kept original)`);
+      return { url, resolved: url, status: "timeout" };
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    log(`ERROR ${url} ${reason} (${elapsed}ms, kept original)`);
+    return { url, resolved: url, status: "error", error: reason };
+  }
+}
+
 async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
   const debug = process.env.DEBUG_URL_RESOLVE === "1";
-  const defaultTimeout = 10000;
+  const defaultTimeout = DEFAULT_TIMEOUT;
   const timeoutMs = debug
     ? Number.parseInt(process.env.URL_RESOLVE_TIMEOUT || String(defaultTimeout), 10)
     : defaultTimeout;
@@ -182,43 +224,25 @@ async function resolveUrls(urls: string[]): Promise<Map<string, string>> {
     : (_msg: string) => {};
 
   const resolved = new Map<string, string>();
+
+  // Single pass — no pooling yet, just uses fetchOne
+  const results = await Promise.allSettled(
+    urls.map((url) => fetchOne(url, timeoutMs, log)),
+  );
+
   let resolvedCount = 0;
   let timeoutCount = 0;
   let errorCount = 0;
 
-  await Promise.allSettled(
-    urls.map(async (url) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const start = Date.now();
-      try {
-        const res = await fetch(url, {
-          method: "HEAD",
-          redirect: "follow",
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-        const elapsed = Date.now() - start;
-        resolved.set(url, res.url);
-        if (url !== res.url) {
-          log(`GET ${url} → ${res.url} (${elapsed}ms)`);
-        }
-        resolvedCount++;
-      } catch (err) {
-        clearTimeout(timer);
-        const elapsed = Date.now() - start;
-        resolved.set(url, url);
-        if (err instanceof Error && err.name === "AbortError") {
-          timeoutCount++;
-          log(`TIMEOUT ${url} after ${timeoutMs}ms (elapsed ${elapsed}ms, kept original)`);
-        } else {
-          errorCount++;
-          const reason = err instanceof Error ? err.message : String(err);
-          log(`ERROR ${url} ${reason} (${elapsed}ms, kept original)`);
-        }
-      }
-    }),
-  );
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      const r = result.value;
+      resolved.set(r.url, r.resolved);
+      if (r.status === "ok") resolvedCount++;
+      else if (r.status === "timeout") timeoutCount++;
+      else errorCount++;
+    }
+  }
 
   if (debug) {
     log(
