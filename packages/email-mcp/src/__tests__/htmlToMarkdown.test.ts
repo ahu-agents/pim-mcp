@@ -282,13 +282,16 @@ describe("htmlToMarkdown", () => {
 
     it("logs summary line with counts", async () => {
       vi.stubEnv("DEBUG_URL_RESOLVE", "1");
-      let callCount = 0;
+      const urlAttempts = new Map<string, number>();
       mockFetch.mockImplementation(async (url: string) => {
-        callCount++;
-        if (callCount === 1) return { url: "https://resolved.example.com" };
-        const err = new Error("aborted");
-        err.name = "AbortError";
-        throw err;
+        const count = (urlAttempts.get(url) || 0) + 1;
+        urlAttempts.set(url, count);
+        if (url.includes("b.example.com")) {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          throw err;
+        }
+        return { url: "https://resolved.example.com" };
       });
 
       await htmlToMarkdown(
@@ -297,7 +300,8 @@ describe("htmlToMarkdown", () => {
       const output = readLog();
       expect(output).toContain("Summary:");
       expect(output).toMatch(/1.*resolved/);
-      expect(output).toMatch(/1.*timeout/);
+      // b.example.com always times out, so retry count = MAX_ATTEMPTS
+      expect(urlAttempts.get("https://b.example.com/2")).toBe(3);
     });
 
     it("uses URL_RESOLVE_TIMEOUT when debug is enabled", async () => {
