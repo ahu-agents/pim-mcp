@@ -219,6 +219,8 @@ async function pooledResolve(
   function startNext(): void {
     if (queue.length === 0) return;
     const url = queue.shift()!;
+    // promise is referenced inside callbacks — safe because they run asynchronously,
+    // after inFlight.set(promise, 1) has executed
     const promise = fetchFn(url)
       .then((result) => {
         inFlight.delete(promise);

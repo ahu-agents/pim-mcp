@@ -300,6 +300,7 @@ describe("htmlToMarkdown", () => {
       const output = readLog();
       expect(output).toContain("Summary:");
       expect(output).toMatch(/1.*resolved/);
+      expect(output).toMatch(/1.*timeout/);
       // b.example.com always times out, so retry count = MAX_ATTEMPTS
       expect(urlAttempts.get("https://b.example.com/2")).toBe(3);
     });
