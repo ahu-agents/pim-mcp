@@ -2,7 +2,7 @@
 
 ## Problem
 
-The `update_event` tool times out after 90s on Mailbox.org's CalDAV server (via MCPorter). The current implementation makes 7 network round trips for a single update — many redundant. `createEvent` and `deleteEvent` have similar inefficiencies (4 calls each).
+The `update_event` tool times out after 90s on Mailbox.org's CalDAV server (via MCPorter). The current implementation makes 7 network round trips for a single update — many redundant. `createEvent` has similar inefficiency (4 calls), and `deleteEvent` costs 3 calls.
 
 The most expensive call is `fetchCalendarObjects`, which downloads every event in the calendar to find one by UID. This is called up to 3 times per `update_event`.
 
@@ -24,17 +24,18 @@ if (!response.ok) {
   throw new CalendarError(
     `Failed to update event: ${response.status} ${response.statusText}`,
     ErrorCode.WRITE_FAILED,
+    uid,
   );
 }
 ```
 
-Add `WRITE_FAILED` to the `ErrorCode` enum in `pim-core`.
+Add `WRITE_FAILED` to the `ErrorCode` enum in `pim-core`. `WRITE_FAILED` errors will fall through to the existing `backend_error` path in the tool handler's error switch — no special handling needed.
 
 This replaces the accidental error detection from the post-write re-fetch with proper, immediate error handling that gives specific error messages.
 
 ### 2. Cache `fetchCalendars` Per Account
 
-Add a `Map<string, DAVCalendar[]>` to `CalDavService`, populated on first `findCalendar` call per account.
+Add a `Map<string, DAVCalendar[]>` to `CalDavService`, keyed by `account.id`, populated on first `findCalendar` call per account.
 
 - `findCalendar` checks the cache first, falls back to network
 - `listCalendars` always fetches fresh (user expects current data) and populates the cache as a side effect
@@ -82,7 +83,7 @@ When `meta` is provided, skip `findCalendarObject` entirely — go straight to P
 
 The handler calls `getEventWithMeta` once, then passes `meta` into the write method.
 
-For `createEvent`, there is no prior object to look up — it only needs response checking and dropping the post-write re-fetch.
+For `createEvent`, there is no prior object to look up. Changes: add response checking after `createCalendarObject`, replace `this.getEvent()` with `parseIcsEvents` to construct the `EventFull` response locally. The `create_events_batch` and `import_ics` handlers call `createEvent` in loops and benefit automatically from the `fetchCalendars` cache.
 
 ### 4. Construct `EventFull` From ICS Instead of Re-fetching
 
@@ -95,7 +96,9 @@ const event = parsed.find((e) => e.uid === uid);
 // Build EventFull from parsed event + calendarId
 ```
 
-CalDAV servers store what you send without modification, so parsing the ICS we just wrote is equivalent to fetching it back.
+CalDAV servers store what you send without modification, so parsing the ICS we just wrote is equivalent to fetching it back. Note: some servers may update `DTSTAMP`, `LAST-MODIFIED`, or `SEQUENCE` fields server-side — the constructed response will reflect the values we sent, not any server-side adjustments. This is an accepted minor fidelity trade-off.
+
+The `calendar_id` field must be set from the caller context (it's not in the ICS), matching how `getEvent` sets it today.
 
 ## Call Reduction Summary
 
@@ -103,7 +106,7 @@ CalDAV servers store what you send without modification, so parsing the ICS we j
 |-----------|--------|-------|---------|
 | `updateEvent` | 7 (fetchCalendars ×3, fetchCalendarObjects ×3, PUT) | 2 (fetchCalendarObjects ×1, PUT) | 5 calls |
 | `createEvent` | 4 (fetchCalendars ×2, fetchCalendarObjects ×1, PUT) | 1-2 (PUT, +fetchCalendars if cold cache) | 2-3 calls |
-| `deleteEvent` | 4 (fetchCalendars ×1, fetchCalendarObjects ×1, DELETE) | 1-2 (DELETE, +fetchCalendarObjects if no meta) | 2-3 calls |
+| `deleteEvent` | 3 (fetchCalendars ×1, fetchCalendarObjects ×1, DELETE) | 1-2 (DELETE, +fetchCalendarObjects if no meta) | 1-2 calls |
 
 With `fetchCalendars` cache warm, calendar lookups add 0 network calls. Cold cache adds 1.
 
