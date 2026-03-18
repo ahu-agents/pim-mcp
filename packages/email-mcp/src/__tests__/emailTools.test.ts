@@ -67,6 +67,8 @@ describe("EMAIL_TOOLS definitions", () => {
     expect(props).toHaveProperty("tags");
     expect(props).toHaveProperty("limit");
     expect(props).toHaveProperty("offset");
+    expect(props).toHaveProperty("sortBy");
+    expect(props).toHaveProperty("sortOrder");
   });
 
   it("get_email requires folder and uid", () => {

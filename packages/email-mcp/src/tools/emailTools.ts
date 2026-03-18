@@ -9,7 +9,7 @@ export const EMAIL_TOOLS: Tool[] = [
   {
     name: "search_emails",
     description:
-      "Search and list emails in a folder. Returns email summaries sorted by date (newest first). All filters combine with AND logic. Use the dedicated fields (subject, from, to, etc.) for most searches.",
+      "Search and list emails in a folder. Returns email summaries with configurable sorting (default: date descending). All filters combine with AND logic. Use the dedicated fields (subject, from, to, etc.) for most searches. Note: for result sets >1000, non-date sort fields are approximate (sorted within page only).",
     inputSchema: {
       type: "object",
       properties: {
@@ -80,6 +80,16 @@ export const EMAIL_TOOLS: Tool[] = [
         offset: {
           type: "number",
           description: "Number of results to skip for pagination. Defaults to 0.",
+        },
+        sortBy: {
+          type: "string",
+          enum: ["date", "from", "subject"],
+          description: "Sort field. Defaults to date.",
+        },
+        sortOrder: {
+          type: "string",
+          enum: ["asc", "desc"],
+          description: "Sort direction. Defaults to desc (newest first for date).",
         },
       },
     },
@@ -354,9 +364,13 @@ export async function handleEmailTool(
         };
         const limit = (args.limit as number) || 50;
         const offset = (args.offset as number) || 0;
+        const sortBy = (args.sortBy as string | undefined) ?? "date";
+        const sortOrder = (args.sortOrder as string | undefined) ?? "desc";
         const emails = await imapService.searchEmails(folder, searchParams, {
           limit,
           offset,
+          sortBy: sortBy as "date" | "from" | "subject",
+          sortOrder: sortOrder as "asc" | "desc",
         });
         return ok(JSON.stringify(emails, null, 2));
       }
