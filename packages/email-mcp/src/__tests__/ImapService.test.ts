@@ -331,7 +331,11 @@ describe("ImapService", () => {
         })(),
       );
 
-      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "date", sortOrder: "asc" });
+      const results = await service.searchEmails(
+        "INBOX",
+        {},
+        { limit: 10, sortBy: "date", sortOrder: "asc" },
+      );
       expect(results[0].subject).toBe("Old");
       expect(results[1].subject).toBe("Middle");
       expect(results[2].subject).toBe("Newest");
@@ -384,7 +388,11 @@ describe("ImapService", () => {
         })(),
       );
 
-      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "from", sortOrder: "asc" });
+      const results = await service.searchEmails(
+        "INBOX",
+        {},
+        { limit: 10, sortBy: "from", sortOrder: "asc" },
+      );
       expect(results[0].from.name).toBe("alice");
       expect(results[1].from.name).toBe("Bob");
       expect(results[2].from.name).toBe("Charlie");
@@ -425,7 +433,11 @@ describe("ImapService", () => {
         })(),
       );
 
-      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "from", sortOrder: "asc" });
+      const results = await service.searchEmails(
+        "INBOX",
+        {},
+        { limit: 10, sortBy: "from", sortOrder: "asc" },
+      );
       expect(results[0].from.name).toBe("Alice");
       expect(results[1].from.address).toBe("zoe@test.com");
     });
@@ -477,7 +489,11 @@ describe("ImapService", () => {
         })(),
       );
 
-      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "subject", sortOrder: "asc" });
+      const results = await service.searchEmails(
+        "INBOX",
+        {},
+        { limit: 10, sortBy: "subject", sortOrder: "asc" },
+      );
       expect(results[0].subject).toBe("alpha");
       expect(results[1].subject).toBe("Bravo");
       expect(results[2].subject).toBe("Zulu");
@@ -520,7 +536,11 @@ describe("ImapService", () => {
         })(),
       );
 
-      const results = await service.searchEmails("INBOX", {}, { limit: 2, offset: 0, sortBy: "subject", sortOrder: "asc" });
+      const results = await service.searchEmails(
+        "INBOX",
+        {},
+        { limit: 2, offset: 0, sortBy: "subject", sortOrder: "asc" },
+      );
       expect(results).toHaveLength(2);
       expect(results[0].subject).toBe("Alpha");
       expect(results[1].subject).toBe("Zulu");

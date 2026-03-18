@@ -405,7 +405,6 @@ function compareSummaries(
     }
     case "subject":
       return direction * a.subject.localeCompare(b.subject, undefined, { sensitivity: "base" });
-    case "date":
     default: {
       const aTime = new Date(a.date).getTime();
       const bTime = new Date(b.date).getTime();
