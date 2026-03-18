@@ -679,6 +679,126 @@ describe("CalDavService", () => {
     });
   });
 
+  describe("fetchCalendars cache", () => {
+    it("caches fetchCalendars result and reuses on second findCalendar call", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: null,
+          availability: null,
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      // Two getEvent calls to the same provider
+      await service.getEvent("mailbox/Work", "evt-1");
+      await service.getEvent("mailbox/Work", "evt-1");
+
+      // fetchCalendars should only be called once (cached after first)
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(1);
+    });
+
+    it("listCalendars always fetches fresh and populates cache", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: null,
+          availability: null,
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      // listCalendars fetches fresh
+      await service.listCalendars();
+      // getEvent should use the cache populated by listCalendars
+      await service.getEvent("mailbox/Work", "evt-1");
+
+      // fetchCalendars called 2 times for listCalendars (one per account),
+      // then 0 more for getEvent (cache hit)
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(2);
+    });
+
+    it("invalidates cache on write error", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: null,
+          availability: null,
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      // First call populates the cache
+      await service.getEvent("mailbox/Work", "evt-1");
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(1);
+
+      // Simulate a write error (non-CalendarError triggers cache invalidation)
+      __mockClient.updateCalendarObject.mockRejectedValue(new Error("network failure"));
+
+      await expect(
+        service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nEND:VCALENDAR"),
+      ).rejects.toThrow();
+
+      // Next call should re-fetch calendars (cache was invalidated)
+      await service.getEvent("mailbox/Work", "evt-1");
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("client caching", () => {
     it("reuses authenticated client across multiple calls for same account", async () => {
       const { __mockClient } = (await import("tsdav")) as any;

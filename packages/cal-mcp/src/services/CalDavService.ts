@@ -65,6 +65,7 @@ export interface FindFreeSlotsOptions {
 export class CalDavService {
   private accounts: Map<string, CalDavAccount>;
   private clients: Map<string, DAVClient> = new Map();
+  private calendarsCache: Map<string, any[]> = new Map();
   private timezone: string;
 
   constructor(config: CalDavConfig) {
@@ -119,7 +120,11 @@ export class CalDavService {
     calendarName: string,
     providerId: string,
   ): Promise<any> {
-    const calendars = await client.fetchCalendars();
+    let calendars = this.calendarsCache.get(providerId);
+    if (!calendars) {
+      calendars = await client.fetchCalendars();
+      this.calendarsCache.set(providerId, calendars);
+    }
     const calendar = calendars.find(
       (c) => (typeof c.displayName === "string" ? c.displayName : "") === calendarName,
     );
@@ -155,6 +160,7 @@ export class CalDavService {
       try {
         const client = await this.getClient(account);
         const calendars = await client.fetchCalendars();
+        this.calendarsCache.set(providerId, calendars);
         for (const cal of calendars) {
           const displayName = (typeof cal.displayName === "string" ? cal.displayName : "") || "";
           allCalendars.push({
@@ -273,6 +279,7 @@ export class CalDavService {
       return await this.getEvent(calendarId, uid);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
+      this.calendarsCache.delete(account.id);
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
@@ -301,6 +308,7 @@ export class CalDavService {
       return await this.getEvent(calendarId, uid);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
+      this.calendarsCache.delete(account.id);
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
@@ -327,6 +335,7 @@ export class CalDavService {
       }
     } catch (error) {
       if (error instanceof CalendarError) throw error;
+      this.calendarsCache.delete(account.id);
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
