@@ -52,7 +52,8 @@ describe("EMAIL_TOOLS definitions", () => {
     const tool = EMAIL_TOOLS.find((t) => t.name === "search_emails")!;
     const props = tool.inputSchema.properties as Record<string, unknown>;
     expect(props).toHaveProperty("folder");
-    expect(props).toHaveProperty("query");
+    expect(props).toHaveProperty("hasWords");
+    expect(props).not.toHaveProperty("query");
     expect(props).toHaveProperty("body");
     expect(props).toHaveProperty("from");
     expect(props).toHaveProperty("to");
