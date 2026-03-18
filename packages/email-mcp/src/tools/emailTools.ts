@@ -20,7 +20,7 @@ export const EMAIL_TOOLS: Tool[] = [
         subject: {
           type: "string",
           description:
-            "Search subject line. Multiple words are ANDed (each word must appear). Use quotes for exact phrase: '\"weekly report\"'.",
+            "Search subject line. Multiple words are ANDed. Use -term to exclude. Use quotes for exact phrase: '\"weekly report\"'.",
         },
         from: {
           type: "string",
@@ -41,12 +41,12 @@ export const EMAIL_TOOLS: Tool[] = [
         body: {
           type: "string",
           description:
-            "Search body text. Multiple words are ANDed. Use quotes for exact phrase: '\"project update\"'.",
+            "Search body text. Multiple words are ANDed. Use -term to exclude. Use quotes for exact phrase: '\"project update\"'.",
         },
-        query: {
+        hasWords: {
           type: "string",
           description:
-            'Advanced: search across subject and body with boolean logic. Supports -term for exclusion. Examples: "budget", "dinner -movie".',
+            'Search all message content (headers + body, IMAP TEXT). Multiple words are ANDed. Use quotes for exact phrase. Use -term for exclusion. Examples: "budget", "report -draft", \'"quarterly report"\'.',
         },
         since: {
           type: "string",
@@ -348,7 +348,7 @@ export async function handleEmailTool(
     switch (name) {
       case "search_emails": {
         const searchParams: SearchParams = {
-          query: args.query as string | undefined,
+          hasWords: args.hasWords as string | undefined,
           body: args.body as string | undefined,
           from: args.from as string | undefined,
           to: args.to as string | undefined,
