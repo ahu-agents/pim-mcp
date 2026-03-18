@@ -1,7 +1,7 @@
 import { getTimezone, toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { generateEventIcs, parseIcsEvents } from "../ical.js";
-import type { CalDavService, EventSummary } from "../services/CalDavService.js";
+import type { CalDavService, CalendarObjectMeta, EventSummary } from "../services/CalDavService.js";
 
 export const CALENDAR_TOOLS: Tool[] = [
   {
@@ -500,7 +500,10 @@ export async function handleCalendarTool(
 
       case "update_event": {
         const span = (args.span as string) ?? "this";
-        const existing = await service.getEvent(args.calendar as string, args.uid as string);
+        const { event: existing, meta } = await service.getEventWithMeta(
+          args.calendar as string,
+          args.uid as string,
+        );
 
         if (existing.is_recurring && (span === "this" || span === "future")) {
           return error(
@@ -529,22 +532,28 @@ export async function handleCalendarTool(
           args.calendar as string,
           args.uid as string,
           icsString,
+          meta,
         );
         return ok({ event });
       }
 
       case "delete_event": {
         const span = (args.span as string) ?? "all";
+        let meta: CalendarObjectMeta | undefined;
         if (span === "this" || span === "future") {
-          const existing = await service.getEvent(args.calendar as string, args.uid as string);
-          if (existing.is_recurring) {
+          const result = await service.getEventWithMeta(
+            args.calendar as string,
+            args.uid as string,
+          );
+          if (result.event.is_recurring) {
             return error(
               "not_implemented",
               "Recurring event instance deletion is not yet supported",
             );
           }
+          meta = result.meta;
         }
-        await service.deleteEvent(args.calendar as string, args.uid as string);
+        await service.deleteEvent(args.calendar as string, args.uid as string, meta);
         return ok({ deleted: true, uid: args.uid });
       }
 

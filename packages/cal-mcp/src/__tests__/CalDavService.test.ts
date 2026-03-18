@@ -207,14 +207,13 @@ describe("CalDavService", () => {
   });
 
   describe("createEvent", () => {
-    it("creates a calendar object and returns the created event", async () => {
+    it("creates a calendar object and returns event built from ICS", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
 
-      // First call: createCalendarObject succeeds
       __mockClient.createCalendarObject.mockResolvedValue({ ok: true });
 
-      // Second call: getEvent fetches the created event back
+      // parseIcsEvents called to build EventFull from ICS (no re-fetch)
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "new-evt",
@@ -235,9 +234,6 @@ describe("CalDavService", () => {
           last_modified: null,
         },
       ]);
-      __mockClient.fetchCalendarObjects.mockResolvedValue([
-        { data: "...", url: "/cal/new-evt.ics", etag: '"e1"' },
-      ]);
 
       const result = await service.createEvent(
         "mailbox/Work",
@@ -247,7 +243,23 @@ describe("CalDavService", () => {
 
       expect(result.uid).toBe("new-evt");
       expect(result.title).toBe("New Event");
+      expect(result.calendar_id).toBe("mailbox/Work");
       expect(__mockClient.createCalendarObject).toHaveBeenCalled();
+      // Should NOT call fetchCalendarObjects (no post-write re-fetch)
+      expect(__mockClient.fetchCalendarObjects).not.toHaveBeenCalled();
+    });
+
+    it("throws CalendarError when server returns non-ok response", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.createCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+      });
+
+      await expect(
+        service.createEvent("mailbox/Work", "BEGIN:VCALENDAR\nEND:VCALENDAR", "new-evt"),
+      ).rejects.toThrow("Failed to create event: 500 Internal Server Error");
     });
   });
 
@@ -256,7 +268,7 @@ describe("CalDavService", () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
 
-      // findCalendarObject call
+      // findCalendarObject call: parseIcsEvents matches uid to find the object
       (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
       __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
         { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
@@ -264,7 +276,7 @@ describe("CalDavService", () => {
 
       __mockClient.updateCalendarObject.mockResolvedValue({ ok: true });
 
-      // getEvent fetch-after-write: findCalendarObject calls parseIcsEvents (match uid)
+      // After write: parseIcsEvents called on the ICS string to build EventFull
       const fullEvent = {
         uid: "evt-1",
         title: "Updated Meeting",
@@ -283,12 +295,7 @@ describe("CalDavService", () => {
         created: null,
         last_modified: null,
       };
-      // findCalendarObject parse + getEvent parse on same object
       (parseIcsEvents as any).mockReturnValueOnce([fullEvent]);
-      (parseIcsEvents as any).mockReturnValueOnce([fullEvent]);
-      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
-        { data: "...", url: "/cal/evt-1.ics", etag: '"e2"' },
-      ]);
 
       const result = await service.updateEvent(
         "mailbox/Work",
@@ -311,6 +318,75 @@ describe("CalDavService", () => {
         "not found",
       );
     });
+
+    it("throws CalendarError when server returns non-ok response", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      // findCalendarObject succeeds
+      (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      __mockClient.updateCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 412,
+        statusText: "Precondition Failed",
+      });
+
+      await expect(
+        service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nEND:VCALENDAR"),
+      ).rejects.toThrow("Failed to update event: 412 Precondition Failed");
+    });
+
+    it("skips findCalendarObject when meta is provided", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      const fullEvent = {
+        uid: "evt-1",
+        title: "Updated Meeting",
+        start: "2026-03-10T14:00:00.000Z",
+        end: "2026-03-10T15:00:00.000Z",
+        all_day: false,
+        location: null,
+        description: null,
+        status: null,
+        availability: null,
+        url: null,
+        attendees: [],
+        organizer: null,
+        recurrence_rule: null,
+        is_recurring: false,
+        created: null,
+        last_modified: null,
+      };
+
+      __mockClient.updateCalendarObject.mockResolvedValue({ ok: true });
+      // parseIcsEvents called only for building EventFull from ICS (no findCalendarObject)
+      (parseIcsEvents as any).mockReturnValue([fullEvent]);
+
+      const result = await service.updateEvent(
+        "mailbox/Work",
+        "evt-1",
+        "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR",
+        { url: "/cal/evt-1.ics", etag: '"e1"' },
+      );
+
+      expect(result.uid).toBe("evt-1");
+      expect(result.title).toBe("Updated Meeting");
+      // fetchCalendarObjects should NOT have been called (meta provided)
+      expect(__mockClient.fetchCalendarObjects).not.toHaveBeenCalled();
+      expect(__mockClient.updateCalendarObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({
+            url: "/cal/evt-1.ics",
+            etag: '"e1"',
+          }),
+        }),
+      );
+    });
   });
 
   describe("deleteEvent", () => {
@@ -324,6 +400,45 @@ describe("CalDavService", () => {
 
       await service.deleteEvent("mailbox/Work", "evt-1");
 
+      expect(__mockClient.deleteCalendarObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({
+            url: "/cal/evt-1.ics",
+            etag: '"e1"',
+          }),
+        }),
+      );
+    });
+
+    it("throws CalendarError when server returns non-ok response", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      __mockClient.deleteCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+      });
+
+      await expect(service.deleteEvent("mailbox/Work", "evt-1")).rejects.toThrow(
+        "Failed to delete event: 404 Not Found",
+      );
+    });
+
+    it("skips findCalendarObject when meta is provided", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+
+      __mockClient.deleteCalendarObject.mockResolvedValue({ ok: true });
+
+      await service.deleteEvent("mailbox/Work", "evt-1", { url: "/cal/evt-1.ics", etag: '"e1"' });
+
+      // fetchCalendarObjects should NOT have been called (meta provided)
+      expect(__mockClient.fetchCalendarObjects).not.toHaveBeenCalled();
       expect(__mockClient.deleteCalendarObject).toHaveBeenCalledWith(
         expect.objectContaining({
           calendarObject: expect.objectContaining({
@@ -622,6 +737,164 @@ describe("CalDavService", () => {
       // First slot should start at or after 09:00
       const firstSlotHour = new Date(slots[0].start).getUTCHours();
       expect(firstSlotHour).toBeGreaterThanOrEqual(9);
+    });
+  });
+
+  describe("fetchCalendars cache", () => {
+    it("caches fetchCalendars result and reuses on second findCalendar call", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: null,
+          availability: null,
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      // Two getEvent calls to the same provider
+      await service.getEvent("mailbox/Work", "evt-1");
+      await service.getEvent("mailbox/Work", "evt-1");
+
+      // fetchCalendars should only be called once (cached after first)
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(1);
+    });
+
+    it("listCalendars always fetches fresh and populates cache", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: null,
+          availability: null,
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      // listCalendars fetches fresh
+      await service.listCalendars();
+      // getEvent should use the cache populated by listCalendars
+      await service.getEvent("mailbox/Work", "evt-1");
+
+      // fetchCalendars called 2 times for listCalendars (one per account),
+      // then 0 more for getEvent (cache hit)
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(2);
+    });
+
+    it("invalidates cache on write error", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: null,
+          availability: null,
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      // First call populates the cache
+      await service.getEvent("mailbox/Work", "evt-1");
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(1);
+
+      // Simulate a write error (non-CalendarError triggers cache invalidation)
+      __mockClient.updateCalendarObject.mockRejectedValue(new Error("network failure"));
+
+      await expect(
+        service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nEND:VCALENDAR"),
+      ).rejects.toThrow();
+
+      // Next call should re-fetch calendars (cache was invalidated)
+      await service.getEvent("mailbox/Work", "evt-1");
+      expect(__mockClient.fetchCalendars).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("getEventWithMeta", () => {
+    it("returns event and CalDAV object metadata (url, etag)", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Team Meeting",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: "Office",
+          description: "Weekly standup",
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "BEGIN:VCALENDAR...END:VCALENDAR", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      const { event, meta } = await service.getEventWithMeta("mailbox/Work", "evt-1");
+
+      expect(event.uid).toBe("evt-1");
+      expect(event.title).toBe("Team Meeting");
+      expect(event.calendar_id).toBe("mailbox/Work");
+      expect(meta.url).toBe("/cal/evt-1.ics");
+      expect(meta.etag).toBe('"e1"');
     });
   });
 

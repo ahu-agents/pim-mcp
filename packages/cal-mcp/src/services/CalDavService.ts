@@ -62,9 +62,15 @@ export interface FindFreeSlotsOptions {
   includeAllDayAsBusy?: boolean;
 }
 
+export interface CalendarObjectMeta {
+  url: string;
+  etag?: string;
+}
+
 export class CalDavService {
   private accounts: Map<string, CalDavAccount>;
   private clients: Map<string, DAVClient> = new Map();
+  private calendarsCache: Map<string, any[]> = new Map();
   private timezone: string;
 
   constructor(config: CalDavConfig) {
@@ -119,7 +125,11 @@ export class CalDavService {
     calendarName: string,
     providerId: string,
   ): Promise<any> {
-    const calendars = await client.fetchCalendars();
+    let calendars = this.calendarsCache.get(providerId);
+    if (!calendars) {
+      calendars = await client.fetchCalendars();
+      this.calendarsCache.set(providerId, calendars);
+    }
     const calendar = calendars.find(
       (c) => (typeof c.displayName === "string" ? c.displayName : "") === calendarName,
     );
@@ -155,6 +165,7 @@ export class CalDavService {
       try {
         const client = await this.getClient(account);
         const calendars = await client.fetchCalendars();
+        this.calendarsCache.set(providerId, calendars);
         for (const cal of calendars) {
           const displayName = (typeof cal.displayName === "string" ? cal.displayName : "") || "";
           allCalendars.push({
@@ -252,60 +263,200 @@ export class CalDavService {
     }
   }
 
+  async getEventWithMeta(
+    calendarId: string,
+    uid: string,
+  ): Promise<{ event: EventFull; meta: CalendarObjectMeta }> {
+    const { account, calendarName } = this.resolveAccount(calendarId);
+
+    try {
+      const client = await this.getClient(account);
+      const calendar = await this.findCalendar(client, calendarName, account.id);
+      const obj = await this.findCalendarObject(client, calendar, uid);
+      const parsed = parseIcsEvents(obj.data!, undefined, this.timezone);
+      const event = parsed.find((e) => e.uid === uid);
+      if (!event) {
+        throw new CalendarError(`Event "${uid}" not found`, ErrorCode.EVENT_NOT_FOUND, uid);
+      }
+
+      return {
+        event: {
+          uid: event.uid,
+          calendar_id: calendarId,
+          title: event.title,
+          start: event.start,
+          end: event.end,
+          all_day: event.all_day,
+          location: event.location,
+          status: event.status,
+          is_recurring: event.is_recurring,
+          description: event.description,
+          url: event.url,
+          availability: event.availability,
+          attendees: event.attendees,
+          organizer: event.organizer,
+          recurrence_rule: event.recurrence_rule,
+          created: event.created,
+          last_modified: event.last_modified,
+        },
+        meta: { url: obj.url, etag: obj.etag },
+      };
+    } catch (error) {
+      if (error instanceof CalendarError) throw error;
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
   async createEvent(calendarId: string, icalString: string, uid: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
 
     try {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
-      await client.createCalendarObject({
+      const response = await client.createCalendarObject({
         calendar,
         iCalString: icalString,
         filename: `${uid}.ics`,
       });
-      return await this.getEvent(calendarId, uid);
+      if (!(response as any).ok) {
+        throw new CalendarError(
+          `Failed to create event: ${(response as any).status} ${(response as any).statusText}`,
+          ErrorCode.WRITE_FAILED,
+          uid,
+        );
+      }
+
+      const parsed = parseIcsEvents(icalString, undefined, this.timezone);
+      const event = parsed.find((e) => e.uid === uid);
+      if (!event) {
+        throw new CalendarError(`Event "${uid}" not found in ICS`, ErrorCode.EVENT_NOT_FOUND, uid);
+      }
+
+      return {
+        uid: event.uid,
+        calendar_id: calendarId,
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        all_day: event.all_day,
+        location: event.location,
+        status: event.status,
+        is_recurring: event.is_recurring,
+        description: event.description,
+        url: event.url,
+        availability: event.availability,
+        attendees: event.attendees,
+        organizer: event.organizer,
+        recurrence_rule: event.recurrence_rule,
+        created: event.created,
+        last_modified: event.last_modified,
+      };
     } catch (error) {
       if (error instanceof CalendarError) throw error;
+      this.calendarsCache.delete(account.id);
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
-  async updateEvent(calendarId: string, uid: string, icalString: string): Promise<EventFull> {
+  async updateEvent(
+    calendarId: string,
+    uid: string,
+    icalString: string,
+    meta?: CalendarObjectMeta,
+  ): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
 
     try {
       const client = await this.getClient(account);
-      const calendar = await this.findCalendar(client, calendarName, account.id);
-      const obj = await this.findCalendarObject(client, calendar, uid);
-      await client.updateCalendarObject({
-        calendarObject: {
-          url: obj.url,
-          etag: obj.etag,
-          data: icalString,
-        },
+      const objUrl = meta?.url;
+      const objEtag = meta?.etag;
+
+      let url: string;
+      let etag: string | undefined;
+      if (objUrl) {
+        url = objUrl;
+        etag = objEtag;
+      } else {
+        const calendar = await this.findCalendar(client, calendarName, account.id);
+        const obj = await this.findCalendarObject(client, calendar, uid);
+        url = obj.url;
+        etag = obj.etag;
+      }
+
+      const response = await client.updateCalendarObject({
+        calendarObject: { url, etag, data: icalString },
       });
-      return await this.getEvent(calendarId, uid);
+      if (!(response as any).ok) {
+        throw new CalendarError(
+          `Failed to update event: ${(response as any).status} ${(response as any).statusText}`,
+          ErrorCode.WRITE_FAILED,
+          uid,
+        );
+      }
+
+      const parsed = parseIcsEvents(icalString, undefined, this.timezone);
+      const event = parsed.find((e) => e.uid === uid);
+      if (!event) {
+        throw new CalendarError(`Event "${uid}" not found in ICS`, ErrorCode.EVENT_NOT_FOUND, uid);
+      }
+
+      return {
+        uid: event.uid,
+        calendar_id: calendarId,
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        all_day: event.all_day,
+        location: event.location,
+        status: event.status,
+        is_recurring: event.is_recurring,
+        description: event.description,
+        url: event.url,
+        availability: event.availability,
+        attendees: event.attendees,
+        organizer: event.organizer,
+        recurrence_rule: event.recurrence_rule,
+        created: event.created,
+        last_modified: event.last_modified,
+      };
     } catch (error) {
       if (error instanceof CalendarError) throw error;
+      this.calendarsCache.delete(account.id);
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
-  async deleteEvent(calendarId: string, uid: string): Promise<void> {
+  async deleteEvent(calendarId: string, uid: string, meta?: CalendarObjectMeta): Promise<void> {
     const { account, calendarName } = this.resolveAccount(calendarId);
 
     try {
       const client = await this.getClient(account);
-      const calendar = await this.findCalendar(client, calendarName, account.id);
-      const obj = await this.findCalendarObject(client, calendar, uid);
-      await client.deleteCalendarObject({
-        calendarObject: {
-          url: obj.url,
-          etag: obj.etag,
-        },
+
+      let url: string;
+      let etag: string | undefined;
+      if (meta?.url) {
+        url = meta.url;
+        etag = meta.etag;
+      } else {
+        const calendar = await this.findCalendar(client, calendarName, account.id);
+        const obj = await this.findCalendarObject(client, calendar, uid);
+        url = obj.url;
+        etag = obj.etag;
+      }
+
+      const response = await client.deleteCalendarObject({
+        calendarObject: { url, etag },
       });
+      if (!(response as any).ok) {
+        throw new CalendarError(
+          `Failed to delete event: ${(response as any).status} ${(response as any).statusText}`,
+          ErrorCode.WRITE_FAILED,
+          uid,
+        );
+      }
     } catch (error) {
       if (error instanceof CalendarError) throw error;
+      this.calendarsCache.delete(account.id);
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
