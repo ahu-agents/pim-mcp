@@ -799,6 +799,44 @@ describe("CalDavService", () => {
     });
   });
 
+  describe("getEventWithMeta", () => {
+    it("returns event and CalDAV object metadata (url, etag)", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Team Meeting",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: "Office",
+          description: "Weekly standup",
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "BEGIN:VCALENDAR...END:VCALENDAR", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      const { event, meta } = await service.getEventWithMeta("mailbox/Work", "evt-1");
+
+      expect(event.uid).toBe("evt-1");
+      expect(event.title).toBe("Team Meeting");
+      expect(event.calendar_id).toBe("mailbox/Work");
+      expect(meta.url).toBe("/cal/evt-1.ics");
+      expect(meta.etag).toBe('"e1"');
+    });
+  });
+
   describe("client caching", () => {
     it("reuses authenticated client across multiple calls for same account", async () => {
       const { __mockClient } = (await import("tsdav")) as any;

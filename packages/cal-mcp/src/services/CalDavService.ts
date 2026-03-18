@@ -62,6 +62,11 @@ export interface FindFreeSlotsOptions {
   includeAllDayAsBusy?: boolean;
 }
 
+export interface CalendarObjectMeta {
+  url: string;
+  etag?: string;
+}
+
 export class CalDavService {
   private accounts: Map<string, CalDavAccount>;
   private clients: Map<string, DAVClient> = new Map();
@@ -251,6 +256,50 @@ export class CalDavService {
         recurrence_rule: event.recurrence_rule,
         created: event.created,
         last_modified: event.last_modified,
+      };
+    } catch (error) {
+      if (error instanceof CalendarError) throw error;
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  async getEventWithMeta(
+    calendarId: string,
+    uid: string,
+  ): Promise<{ event: EventFull; meta: CalendarObjectMeta }> {
+    const { account, calendarName } = this.resolveAccount(calendarId);
+
+    try {
+      const client = await this.getClient(account);
+      const calendar = await this.findCalendar(client, calendarName, account.id);
+      const obj = await this.findCalendarObject(client, calendar, uid);
+      const parsed = parseIcsEvents(obj.data!, undefined, this.timezone);
+      const event = parsed.find((e) => e.uid === uid);
+      if (!event) {
+        throw new CalendarError(`Event "${uid}" not found`, ErrorCode.EVENT_NOT_FOUND, uid);
+      }
+
+      return {
+        event: {
+          uid: event.uid,
+          calendar_id: calendarId,
+          title: event.title,
+          start: event.start,
+          end: event.end,
+          all_day: event.all_day,
+          location: event.location,
+          status: event.status,
+          is_recurring: event.is_recurring,
+          description: event.description,
+          url: event.url,
+          availability: event.availability,
+          attendees: event.attendees,
+          organizer: event.organizer,
+          recurrence_rule: event.recurrence_rule,
+          created: event.created,
+          last_modified: event.last_modified,
+        },
+        meta: { url: obj.url, etag: obj.etag },
       };
     } catch (error) {
       if (error instanceof CalendarError) throw error;
