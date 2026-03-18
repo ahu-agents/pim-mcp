@@ -43,6 +43,8 @@ export interface AttachmentData {
 export interface SearchOptions {
   limit?: number;
   offset?: number;
+  sortBy?: "date" | "from" | "subject";
+  sortOrder?: "asc" | "desc";
 }
 
 export class ImapService {
@@ -118,18 +120,21 @@ export class ImapService {
 
         const offset = options.offset ?? 0;
         const limit = options.limit ?? 50;
+        const sortBy = options.sortBy ?? "date";
+        const sortOrder = options.sortOrder ?? "desc";
 
         if (uids.length <= 1000) {
-          // Tier 2: fetch all envelopes, sort by date, paginate
+          // Tier 1: fetch all envelopes, sort, paginate
           const allSummaries = await this.fetchSummaries(client, uids);
-          allSummaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          allSummaries.sort((a, b) => compareSummaries(a, b, sortBy, sortOrder));
           return allSummaries.slice(offset, offset + limit);
         }
-        // Tier 3: reverse UIDs, slice, fetch, sort slice
+        // Tier 2: reverse UIDs (approximate newest-first), slice, fetch, sort page
+        // Note: for non-date sortBy, sort is best-effort (within page only)
         uids.reverse();
         const fetchUids = uids.slice(offset, offset + limit);
         const summaries = await this.fetchSummaries(client, fetchUids);
-        return summaries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return summaries.sort((a, b) => compareSummaries(a, b, sortBy, sortOrder));
       } finally {
         lock.release();
       }
@@ -380,6 +385,32 @@ export class ImapService {
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     } finally {
       await client.logout().catch(() => {});
+    }
+  }
+}
+
+function compareSummaries(
+  a: EmailSummary,
+  b: EmailSummary,
+  sortBy: "date" | "from" | "subject",
+  sortOrder: "asc" | "desc",
+): number {
+  const direction = sortOrder === "desc" ? -1 : 1;
+
+  switch (sortBy) {
+    case "from": {
+      const aKey = a.from.name ?? a.from.address;
+      const bKey = b.from.name ?? b.from.address;
+      return direction * aKey.localeCompare(bKey, undefined, { sensitivity: "base" });
+    }
+    case "subject":
+      return direction * a.subject.localeCompare(b.subject, undefined, { sensitivity: "base" });
+    default: {
+      const aTime = new Date(a.date).getTime();
+      const bTime = new Date(b.date).getTime();
+      const aVal = Number.isNaN(aTime) ? 0 : aTime;
+      const bVal = Number.isNaN(bTime) ? 0 : bTime;
+      return direction * (aVal - bVal);
     }
   }
 }
