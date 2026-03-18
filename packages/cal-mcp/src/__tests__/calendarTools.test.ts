@@ -5,6 +5,7 @@ const mockService = {
   listCalendars: vi.fn(),
   listEvents: vi.fn(),
   getEvent: vi.fn(),
+  getEventWithMeta: vi.fn(),
   createEvent: vi.fn(),
   updateEvent: vi.fn(),
   deleteEvent: vi.fn(),
@@ -167,11 +168,14 @@ describe("calendarTools", () => {
     });
 
     it("update_event returns not_implemented for span this on recurring event", async () => {
-      mockService.getEvent.mockResolvedValue({
-        uid: "evt-1",
-        title: "Weekly",
-        is_recurring: true,
-        recurrence_rule: "FREQ=WEEKLY",
+      mockService.getEventWithMeta.mockResolvedValue({
+        event: {
+          uid: "evt-1",
+          title: "Weekly",
+          is_recurring: true,
+          recurrence_rule: "FREQ=WEEKLY",
+        },
+        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
       });
 
       const result = await handleCalendarTool(
@@ -186,17 +190,20 @@ describe("calendarTools", () => {
     });
 
     it("update_event succeeds with span this on non-recurring event", async () => {
-      mockService.getEvent.mockResolvedValue({
-        uid: "evt-1",
-        title: "Meeting",
-        is_recurring: false,
-        recurrence_rule: null,
-        start: "2026-03-10T14:00:00Z",
-        end: "2026-03-10T15:00:00Z",
-        all_day: false,
-        location: null,
-        description: null,
-        attendees: [],
+      mockService.getEventWithMeta.mockResolvedValue({
+        event: {
+          uid: "evt-1",
+          title: "Meeting",
+          is_recurring: false,
+          recurrence_rule: null,
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          all_day: false,
+          location: null,
+          description: null,
+          attendees: [],
+        },
+        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
       });
       mockService.updateEvent.mockResolvedValue({
         uid: "evt-1",
