@@ -101,26 +101,17 @@ describe("buildSearchCriteria", () => {
 
   it("handles -negation in subject tokens", () => {
     const result = buildSearchCriteria({ subject: "update -cancelled" });
-    expect(result).toEqual([
-      { subject: "update" },
-      { not: { subject: "cancelled" } },
-    ]);
+    expect(result).toEqual([{ subject: "update" }, { not: { subject: "cancelled" } }]);
   });
 
   it("handles -negation in body tokens", () => {
     const result = buildSearchCriteria({ body: "report -draft" });
-    expect(result).toEqual([
-      { body: "report" },
-      { not: { body: "draft" } },
-    ]);
+    expect(result).toEqual([{ body: "report" }, { not: { body: "draft" } }]);
   });
 
   it("handles quoted phrase with -negation in subject", () => {
     const result = buildSearchCriteria({ subject: '"budget report" -old' });
-    expect(result).toEqual([
-      { subject: "budget report" },
-      { not: { subject: "old" } },
-    ]);
+    expect(result).toEqual([{ subject: "budget report" }, { not: { subject: "old" } }]);
   });
 
   it("handles -negation on quoted phrase", () => {
@@ -141,10 +132,7 @@ describe("buildSearchCriteria", () => {
 
   it("handles -negation in hasWords", () => {
     const result = buildSearchCriteria({ hasWords: "budget -draft" });
-    expect(result).toEqual([
-      { text: "budget" },
-      { not: { text: "draft" } },
-    ]);
+    expect(result).toEqual([{ text: "budget" }, { not: { text: "draft" } }]);
   });
 
   it("handles quoted phrase in hasWords", () => {
@@ -227,9 +215,7 @@ describe("buildSearchCriteria", () => {
       from: "alice@test.com",
       subject: "meeting",
     });
-    expect(result).toEqual([
-      { from: "alice@test.com", subject: "meeting" },
-    ]);
+    expect(result).toEqual([{ from: "alice@test.com", subject: "meeting" }]);
   });
 
   it("returns base-only criteria merged when no tokenized fields", () => {
