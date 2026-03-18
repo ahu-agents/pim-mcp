@@ -20,6 +20,7 @@ export enum ErrorCode {
   INVALID_ICS = "INVALID_ICS",
   INTERNAL_ERROR = "INTERNAL_ERROR",
   OPERATION_FAILED = "OPERATION_FAILED",
+  WRITE_FAILED = "WRITE_FAILED",
 }
 
 export abstract class PimError extends Error {
