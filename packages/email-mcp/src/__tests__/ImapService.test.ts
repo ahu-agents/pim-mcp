@@ -602,6 +602,53 @@ describe("ImapService", () => {
       expect(results[0].subject).toBe("Newest");
       expect(results[1].subject).toBe("Older");
     });
+
+    it("folds base criteria into each IMAP SEARCH call for tokenized fields", async () => {
+      // First search: from + subject "dinner" → UIDs [101, 102]
+      mockSearch.mockResolvedValueOnce([101, 102]);
+      // Second search: from + subject "movie" → UIDs [102, 103]
+      mockSearch.mockResolvedValueOnce([102, 103]);
+
+      const messages = [
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "Dinner and a movie",
+            from: [{ address: "alice@test.com", name: "Alice" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-04"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {
+        from: "alice@test.com",
+        subject: "dinner movie",
+      });
+
+      // Should have called search twice — each with from folded in
+      expect(mockSearch).toHaveBeenCalledTimes(2);
+      expect(mockSearch).toHaveBeenCalledWith(
+        { from: "alice@test.com", subject: "dinner" },
+        { uid: true },
+      );
+      expect(mockSearch).toHaveBeenCalledWith(
+        { from: "alice@test.com", subject: "movie" },
+        { uid: true },
+      );
+
+      // Intersection: only UID 102
+      expect(results).toHaveLength(1);
+      expect(results[0].uid).toBe(102);
+    });
   });
 
   describe("fetchEmail", () => {
