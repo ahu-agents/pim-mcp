@@ -207,14 +207,13 @@ describe("CalDavService", () => {
   });
 
   describe("createEvent", () => {
-    it("creates a calendar object and returns the created event", async () => {
+    it("creates a calendar object and returns event built from ICS", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
 
-      // First call: createCalendarObject succeeds
       __mockClient.createCalendarObject.mockResolvedValue({ ok: true });
 
-      // Second call: getEvent fetches the created event back
+      // parseIcsEvents called to build EventFull from ICS (no re-fetch)
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "new-evt",
@@ -235,9 +234,6 @@ describe("CalDavService", () => {
           last_modified: null,
         },
       ]);
-      __mockClient.fetchCalendarObjects.mockResolvedValue([
-        { data: "...", url: "/cal/new-evt.ics", etag: '"e1"' },
-      ]);
 
       const result = await service.createEvent(
         "mailbox/Work",
@@ -247,7 +243,10 @@ describe("CalDavService", () => {
 
       expect(result.uid).toBe("new-evt");
       expect(result.title).toBe("New Event");
+      expect(result.calendar_id).toBe("mailbox/Work");
       expect(__mockClient.createCalendarObject).toHaveBeenCalled();
+      // Should NOT call fetchCalendarObjects (no post-write re-fetch)
+      expect(__mockClient.fetchCalendarObjects).not.toHaveBeenCalled();
     });
 
     it("throws CalendarError when server returns non-ok response", async () => {

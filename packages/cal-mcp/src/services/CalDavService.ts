@@ -325,7 +325,32 @@ export class CalDavService {
           uid,
         );
       }
-      return await this.getEvent(calendarId, uid);
+
+      const parsed = parseIcsEvents(icalString, undefined, this.timezone);
+      const event = parsed.find((e) => e.uid === uid);
+      if (!event) {
+        throw new CalendarError(`Event "${uid}" not found in ICS`, ErrorCode.EVENT_NOT_FOUND, uid);
+      }
+
+      return {
+        uid: event.uid,
+        calendar_id: calendarId,
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        all_day: event.all_day,
+        location: event.location,
+        status: event.status,
+        is_recurring: event.is_recurring,
+        description: event.description,
+        url: event.url,
+        availability: event.availability,
+        attendees: event.attendees,
+        organizer: event.organizer,
+        recurrence_rule: event.recurrence_rule,
+        created: event.created,
+        last_modified: event.last_modified,
+      };
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       this.calendarsCache.delete(account.id);
