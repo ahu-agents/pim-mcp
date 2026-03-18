@@ -99,18 +99,58 @@ describe("buildSearchCriteria", () => {
     expect(result).toEqual({ subject: "dinner movie" });
   });
 
-  it("maps query to OR of subject and body", () => {
-    const result = buildSearchCriteria({ query: "budget" });
-    assert(!Array.isArray(result));
-    expect(result.or).toBeDefined();
-    expect(result.or).toEqual([{ subject: "budget" }, { body: "budget" }]);
+  it("handles -negation in subject tokens", () => {
+    const result = buildSearchCriteria({ subject: "update -cancelled" });
+    expect(result).toEqual([
+      { subject: "update" },
+      { not: { subject: "cancelled" } },
+    ]);
   });
 
-  it("handles query with -exclusion", () => {
-    const result = buildSearchCriteria({ query: "dinner -movie" });
-    assert(!Array.isArray(result));
-    expect(result.or).toBeDefined();
-    expect(result.not).toBeDefined();
+  it("handles -negation in body tokens", () => {
+    const result = buildSearchCriteria({ body: "report -draft" });
+    expect(result).toEqual([
+      { body: "report" },
+      { not: { body: "draft" } },
+    ]);
+  });
+
+  it("handles quoted phrase with -negation in subject", () => {
+    const result = buildSearchCriteria({ subject: '"budget report" -old' });
+    expect(result).toEqual([
+      { subject: "budget report" },
+      { not: { subject: "old" } },
+    ]);
+  });
+
+  it("handles -negation on quoted phrase", () => {
+    const result = buildSearchCriteria({ subject: '-"out of office"' });
+    expect(result).toEqual({ not: { subject: "out of office" } });
+  });
+
+  it("maps hasWords to IMAP text key", () => {
+    expect(buildSearchCriteria({ hasWords: "budget" })).toEqual({
+      text: "budget",
+    });
+  });
+
+  it("tokenizes hasWords with AND", () => {
+    const result = buildSearchCriteria({ hasWords: "budget report" });
+    expect(result).toEqual([{ text: "budget" }, { text: "report" }]);
+  });
+
+  it("handles -negation in hasWords", () => {
+    const result = buildSearchCriteria({ hasWords: "budget -draft" });
+    expect(result).toEqual([
+      { text: "budget" },
+      { not: { text: "draft" } },
+    ]);
+  });
+
+  it("handles quoted phrase in hasWords", () => {
+    expect(buildSearchCriteria({ hasWords: '"budget report"' })).toEqual({
+      text: "budget report",
+    });
   });
 
   it("combines multiple params with AND", () => {

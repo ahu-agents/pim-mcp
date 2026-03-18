@@ -1,5 +1,5 @@
 export interface SearchParams {
-  query?: string;
+  hasWords?: string;
   body?: string;
   from?: string;
   to?: string;
@@ -14,18 +14,23 @@ export interface SearchParams {
   tags?: string[];
 }
 
-/**
- * Parse a string value into tokens, respecting quoted phrases.
- * "dinner movie" → ["dinner", "movie"]
- * '"dinner movie"' → ["dinner movie"]
- * 'hello "exact phrase" world' → ["hello", "exact phrase", "world"]
- */
-function parseTokens(value: string): string[] {
-  const tokens: string[] = [];
-  const regex = /"([^"]+)"|(\S+)/g;
+interface ParsedToken {
+  value: string;
+  negated: boolean;
+}
+
+function parseTokens(value: string): ParsedToken[] {
+  const tokens: ParsedToken[] = [];
+  const regex = /-?"([^"]+)"|(\S+)/g;
   let match: RegExpExecArray | null = regex.exec(value);
   while (match !== null) {
-    tokens.push(match[1] || match[2]);
+    const raw = match[0];
+    const isNegated = raw.startsWith("-");
+    const text = match[1] || match[2];
+    const cleaned = isNegated && !match[1] ? text.slice(1) : text;
+    if (cleaned.length > 0) {
+      tokens.push({ value: cleaned, negated: isNegated });
+    }
     match = regex.exec(value);
   }
   return tokens;
@@ -50,34 +55,23 @@ export function buildSearchCriteria(
     criteria.push({ [field]: value });
   }
 
-  // Text fields → tokenized (spaces = AND), quotes for exact phrase
-  const textFields = ["subject", "body"] as const;
-  for (const field of textFields) {
-    const value = params[field];
+  // Tokenized fields → tokenized (spaces = AND), quotes for exact phrase, - for NOT
+  // subject → IMAP SUBJECT, body → IMAP BODY, hasWords → IMAP TEXT
+  const tokenizedFields: Array<{ param: keyof SearchParams; imapKey: string }> = [
+    { param: "subject", imapKey: "subject" },
+    { param: "body", imapKey: "body" },
+    { param: "hasWords", imapKey: "text" },
+  ];
+  for (const { param, imapKey } of tokenizedFields) {
+    const value = params[param] as string | undefined;
     if (value === undefined) continue;
     const tokens = parseTokens(value);
     for (const token of tokens) {
-      criteria.push({ [field]: token });
-    }
-  }
-
-  // query → OR(subject, body) for each positive term, NOT(body) for -terms
-  if (params.query !== undefined) {
-    const tokens = parseTokens(params.query);
-    const positive: string[] = [];
-    const negative: string[] = [];
-    for (const token of tokens) {
-      if (token.startsWith("-") && token.length > 1) {
-        negative.push(token.slice(1));
+      if (token.negated) {
+        criteria.push({ not: { [imapKey]: token.value } });
       } else {
-        positive.push(token);
+        criteria.push({ [imapKey]: token.value });
       }
-    }
-    for (const term of positive) {
-      criteria.push({ or: [{ subject: term }, { body: term }] });
-    }
-    for (const term of negative) {
-      criteria.push({ not: { body: term } });
     }
   }
 
@@ -123,8 +117,12 @@ export function buildSearchCriteria(
   // If any key appears more than once, return the array instead — imapflow ANDs array elements.
   const seenKeys = new Set<string>();
   let hasDuplicateKey = false;
+  let hasNotCriterion = false;
   for (const c of criteria) {
     for (const key of Object.keys(c)) {
+      if (key === "not") {
+        hasNotCriterion = true;
+      }
       if (seenKeys.has(key)) {
         hasDuplicateKey = true;
         break;
@@ -132,6 +130,11 @@ export function buildSearchCriteria(
       seenKeys.add(key);
     }
     if (hasDuplicateKey) break;
+  }
+  // If there are both "not" criteria and other criteria, always return array
+  // form to avoid merging semantically distinct criteria into one object.
+  if (hasNotCriterion && criteria.length > 1) {
+    hasDuplicateKey = true;
   }
 
   if (hasDuplicateKey) {
