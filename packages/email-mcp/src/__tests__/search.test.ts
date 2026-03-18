@@ -164,4 +164,82 @@ describe("buildSearchCriteria", () => {
     expect(result.seen).toBe(false);
     expect(result.since).toEqual(new Date("2026-03-01"));
   });
+
+  it("returns base criteria folded into each tokenized criterion", () => {
+    const result = buildSearchCriteria({
+      from: "alice@test.com",
+      subject: "update meeting",
+    });
+    expect(result).toEqual([
+      { from: "alice@test.com", subject: "update" },
+      { from: "alice@test.com", subject: "meeting" },
+    ]);
+  });
+
+  it("folds multiple base criteria into each tokenized criterion", () => {
+    const result = buildSearchCriteria({
+      from: "alice@test.com",
+      unread: true,
+      subject: "update meeting",
+    });
+    expect(result).toEqual([
+      { from: "alice@test.com", seen: false, subject: "update" },
+      { from: "alice@test.com", seen: false, subject: "meeting" },
+    ]);
+  });
+
+  it("folds base criteria with NOT tokenized criteria", () => {
+    const result = buildSearchCriteria({
+      from: "alice@test.com",
+      subject: "update -spam",
+    });
+    expect(result).toEqual([
+      { from: "alice@test.com", subject: "update" },
+      { from: "alice@test.com", not: { subject: "spam" } },
+    ]);
+  });
+
+  it("folds base criteria with hasWords tokens", () => {
+    const result = buildSearchCriteria({
+      flagged: true,
+      hasWords: "budget report",
+    });
+    expect(result).toEqual([
+      { flagged: true, text: "budget" },
+      { flagged: true, text: "report" },
+    ]);
+  });
+
+  it("folds base criteria with tokens from multiple tokenized fields", () => {
+    const result = buildSearchCriteria({
+      from: "alice@test.com",
+      subject: "meeting",
+      body: "agenda",
+    });
+    expect(result).toEqual([
+      { from: "alice@test.com", subject: "meeting" },
+      { from: "alice@test.com", body: "agenda" },
+    ]);
+  });
+
+  it("folds base into single tokenized criterion (returns 1-element array)", () => {
+    const result = buildSearchCriteria({
+      from: "alice@test.com",
+      subject: "meeting",
+    });
+    expect(result).toEqual([
+      { from: "alice@test.com", subject: "meeting" },
+    ]);
+  });
+
+  it("returns base-only criteria merged when no tokenized fields", () => {
+    const result = buildSearchCriteria({
+      from: "alice@test.com",
+      unread: true,
+    });
+    expect(result).toEqual({
+      from: "alice@test.com",
+      seen: false,
+    });
+  });
 });
