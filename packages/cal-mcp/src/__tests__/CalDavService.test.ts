@@ -269,7 +269,7 @@ describe("CalDavService", () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
 
-      // findCalendarObject call
+      // findCalendarObject call: parseIcsEvents matches uid to find the object
       (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
       __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
         { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
@@ -277,7 +277,7 @@ describe("CalDavService", () => {
 
       __mockClient.updateCalendarObject.mockResolvedValue({ ok: true });
 
-      // getEvent fetch-after-write: findCalendarObject calls parseIcsEvents (match uid)
+      // After write: parseIcsEvents called on the ICS string to build EventFull
       const fullEvent = {
         uid: "evt-1",
         title: "Updated Meeting",
@@ -296,12 +296,7 @@ describe("CalDavService", () => {
         created: null,
         last_modified: null,
       };
-      // findCalendarObject parse + getEvent parse on same object
       (parseIcsEvents as any).mockReturnValueOnce([fullEvent]);
-      (parseIcsEvents as any).mockReturnValueOnce([fullEvent]);
-      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
-        { data: "...", url: "/cal/evt-1.ics", etag: '"e2"' },
-      ]);
 
       const result = await service.updateEvent(
         "mailbox/Work",
@@ -345,6 +340,54 @@ describe("CalDavService", () => {
         service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nEND:VCALENDAR"),
       ).rejects.toThrow("Failed to update event: 412 Precondition Failed");
     });
+
+    it("skips findCalendarObject when meta is provided", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      const fullEvent = {
+        uid: "evt-1",
+        title: "Updated Meeting",
+        start: "2026-03-10T14:00:00.000Z",
+        end: "2026-03-10T15:00:00.000Z",
+        all_day: false,
+        location: null,
+        description: null,
+        status: null,
+        availability: null,
+        url: null,
+        attendees: [],
+        organizer: null,
+        recurrence_rule: null,
+        is_recurring: false,
+        created: null,
+        last_modified: null,
+      };
+
+      __mockClient.updateCalendarObject.mockResolvedValue({ ok: true });
+      // parseIcsEvents called only for building EventFull from ICS (no findCalendarObject)
+      (parseIcsEvents as any).mockReturnValue([fullEvent]);
+
+      const result = await service.updateEvent(
+        "mailbox/Work",
+        "evt-1",
+        "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR",
+        { url: "/cal/evt-1.ics", etag: '"e1"' },
+      );
+
+      expect(result.uid).toBe("evt-1");
+      expect(result.title).toBe("Updated Meeting");
+      // fetchCalendarObjects should NOT have been called (meta provided)
+      expect(__mockClient.fetchCalendarObjects).not.toHaveBeenCalled();
+      expect(__mockClient.updateCalendarObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({
+            url: "/cal/evt-1.ics",
+            etag: '"e1"',
+          }),
+        }),
+      );
+    });
   });
 
   describe("deleteEvent", () => {
@@ -385,6 +428,25 @@ describe("CalDavService", () => {
 
       await expect(service.deleteEvent("mailbox/Work", "evt-1")).rejects.toThrow(
         "Failed to delete event: 404 Not Found",
+      );
+    });
+
+    it("skips findCalendarObject when meta is provided", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+
+      __mockClient.deleteCalendarObject.mockResolvedValue({ ok: true });
+
+      await service.deleteEvent("mailbox/Work", "evt-1", { url: "/cal/evt-1.ics", etag: '"e1"' });
+
+      // fetchCalendarObjects should NOT have been called (meta provided)
+      expect(__mockClient.fetchCalendarObjects).not.toHaveBeenCalled();
+      expect(__mockClient.deleteCalendarObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({
+            url: "/cal/evt-1.ics",
+            etag: '"e1"',
+          }),
+        }),
       );
     });
   });
