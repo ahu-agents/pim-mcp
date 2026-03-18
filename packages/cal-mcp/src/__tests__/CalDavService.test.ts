@@ -249,6 +249,19 @@ describe("CalDavService", () => {
       expect(result.title).toBe("New Event");
       expect(__mockClient.createCalendarObject).toHaveBeenCalled();
     });
+
+    it("throws CalendarError when server returns non-ok response", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.createCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+      });
+
+      await expect(
+        service.createEvent("mailbox/Work", "BEGIN:VCALENDAR\nEND:VCALENDAR", "new-evt"),
+      ).rejects.toThrow("Failed to create event: 500 Internal Server Error");
+    });
   });
 
   describe("updateEvent", () => {
@@ -311,6 +324,27 @@ describe("CalDavService", () => {
         "not found",
       );
     });
+
+    it("throws CalendarError when server returns non-ok response", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      // findCalendarObject succeeds
+      (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      __mockClient.updateCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 412,
+        statusText: "Precondition Failed",
+      });
+
+      await expect(
+        service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nEND:VCALENDAR"),
+      ).rejects.toThrow("Failed to update event: 412 Precondition Failed");
+    });
   });
 
   describe("deleteEvent", () => {
@@ -331,6 +365,26 @@ describe("CalDavService", () => {
             etag: '"e1"',
           }),
         }),
+      );
+    });
+
+    it("throws CalendarError when server returns non-ok response", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      __mockClient.deleteCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+      });
+
+      await expect(service.deleteEvent("mailbox/Work", "evt-1")).rejects.toThrow(
+        "Failed to delete event: 404 Not Found",
       );
     });
   });

@@ -258,11 +258,18 @@ export class CalDavService {
     try {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
-      await client.createCalendarObject({
+      const response = await client.createCalendarObject({
         calendar,
         iCalString: icalString,
         filename: `${uid}.ics`,
       });
+      if (!(response as any).ok) {
+        throw new CalendarError(
+          `Failed to create event: ${(response as any).status} ${(response as any).statusText}`,
+          ErrorCode.WRITE_FAILED,
+          uid,
+        );
+      }
       return await this.getEvent(calendarId, uid);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
@@ -277,13 +284,20 @@ export class CalDavService {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
-      await client.updateCalendarObject({
+      const response = await client.updateCalendarObject({
         calendarObject: {
           url: obj.url,
           etag: obj.etag,
           data: icalString,
         },
       });
+      if (!(response as any).ok) {
+        throw new CalendarError(
+          `Failed to update event: ${(response as any).status} ${(response as any).statusText}`,
+          ErrorCode.WRITE_FAILED,
+          uid,
+        );
+      }
       return await this.getEvent(calendarId, uid);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
@@ -298,12 +312,19 @@ export class CalDavService {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
       const obj = await this.findCalendarObject(client, calendar, uid);
-      await client.deleteCalendarObject({
+      const response = await client.deleteCalendarObject({
         calendarObject: {
           url: obj.url,
           etag: obj.etag,
         },
       });
+      if (!(response as any).ok) {
+        throw new CalendarError(
+          `Failed to delete event: ${(response as any).status} ${(response as any).statusText}`,
+          ErrorCode.WRITE_FAILED,
+          uid,
+        );
+      }
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
