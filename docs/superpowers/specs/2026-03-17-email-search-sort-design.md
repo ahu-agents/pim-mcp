@@ -108,7 +108,6 @@ const emails = await imapService.searchEmails(folder, searchParams, {
 
 ## Roadmap (Future Iterations)
 
-1. **NOT support for subject/body** — `-prefix` negation in tokenized fields
+1. **Tokenized search with NOT + hasWords** — unified tokenization for subject/body/hasWords, `-prefix` negation, replace `query` field with `hasWords` (IMAP TEXT)
 2. **Base criteria folding** — fold non-tokenized fields into each IMAP SEARCH call
-3. **Boolean query parser** — AND, OR, NOT, `()` grouping for `query` field
-4. **IMAP SORT (RFC 5256)** — capability detection + raw SORT command when server supports it
+3. **IMAP SORT (RFC 5256)** — capability detection + raw SORT command when server supports it
