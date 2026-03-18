@@ -284,7 +284,249 @@ describe("ImapService", () => {
       expect(results.map((r) => r.uid).sort()).toEqual([102, 103]);
     });
 
-    it("Tier 3: fetches only the paginated slice when >1000 UIDs are returned", async () => {
+    it("sorts by date ascending when sortOrder is asc", async () => {
+      mockSearch.mockResolvedValueOnce([101, 102, 103]);
+
+      const messages = [
+        {
+          uid: 101,
+          envelope: {
+            messageId: "<msg-101@test.com>",
+            subject: "Old",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-01"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "Newest",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "d@test.com", name: "D" }],
+            date: new Date("2026-03-10"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 103,
+          envelope: {
+            messageId: "<msg-103@test.com>",
+            subject: "Middle",
+            from: [{ address: "e@test.com", name: "E" }],
+            to: [{ address: "f@test.com", name: "F" }],
+            date: new Date("2026-03-05"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "date", sortOrder: "asc" });
+      expect(results[0].subject).toBe("Old");
+      expect(results[1].subject).toBe("Middle");
+      expect(results[2].subject).toBe("Newest");
+    });
+
+    it("sorts by from name (case-insensitive)", async () => {
+      mockSearch.mockResolvedValueOnce([101, 102, 103]);
+
+      const messages = [
+        {
+          uid: 101,
+          envelope: {
+            messageId: "<msg-101@test.com>",
+            subject: "S1",
+            from: [{ address: "charlie@test.com", name: "Charlie" }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-01"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "S2",
+            from: [{ address: "alice@test.com", name: "alice" }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-02"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 103,
+          envelope: {
+            messageId: "<msg-103@test.com>",
+            subject: "S3",
+            from: [{ address: "bob@test.com", name: "Bob" }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-03"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "from", sortOrder: "asc" });
+      expect(results[0].from.name).toBe("alice");
+      expect(results[1].from.name).toBe("Bob");
+      expect(results[2].from.name).toBe("Charlie");
+    });
+
+    it("sorts by from address when name is undefined", async () => {
+      mockSearch.mockResolvedValueOnce([101, 102]);
+
+      const messages = [
+        {
+          uid: 101,
+          envelope: {
+            messageId: "<msg-101@test.com>",
+            subject: "S1",
+            from: [{ address: "zoe@test.com", name: undefined }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-01"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "S2",
+            from: [{ address: "alice@test.com", name: "Alice" }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-02"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "from", sortOrder: "asc" });
+      expect(results[0].from.name).toBe("Alice");
+      expect(results[1].from.address).toBe("zoe@test.com");
+    });
+
+    it("sorts by subject (case-insensitive)", async () => {
+      mockSearch.mockResolvedValueOnce([101, 102, 103]);
+
+      const messages = [
+        {
+          uid: 101,
+          envelope: {
+            messageId: "<msg-101@test.com>",
+            subject: "Zulu",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-01"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 102,
+          envelope: {
+            messageId: "<msg-102@test.com>",
+            subject: "alpha",
+            from: [{ address: "b@test.com", name: "B" }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-02"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 103,
+          envelope: {
+            messageId: "<msg-103@test.com>",
+            subject: "Bravo",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "x@test.com", name: "X" }],
+            date: new Date("2026-03-03"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 10, sortBy: "subject", sortOrder: "asc" });
+      expect(results[0].subject).toBe("alpha");
+      expect(results[1].subject).toBe("Bravo");
+      expect(results[2].subject).toBe("Zulu");
+    });
+
+    it("Tier 2: sorts within page when >1000 UIDs with non-date sortBy", async () => {
+      const allUids = Array.from({ length: 1500 }, (_, i) => i + 1);
+      mockSearch.mockResolvedValueOnce(allUids);
+
+      // After reversing and slicing offset=0 limit=2: [1500, 1499]
+      const fetchedMessages = [
+        {
+          uid: 1500,
+          envelope: {
+            messageId: "<msg-1500@test.com>",
+            subject: "Zulu",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-05"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+        {
+          uid: 1499,
+          envelope: {
+            messageId: "<msg-1499@test.com>",
+            subject: "Alpha",
+            from: [{ address: "c@test.com", name: "C" }],
+            to: [{ address: "d@test.com", name: "D" }],
+            date: new Date("2026-03-10"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of fetchedMessages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 2, offset: 0, sortBy: "subject", sortOrder: "asc" });
+      expect(results).toHaveLength(2);
+      expect(results[0].subject).toBe("Alpha");
+      expect(results[1].subject).toBe("Zulu");
+    });
+
+    it("Tier 2: fetches only the paginated slice when >1000 UIDs are returned", async () => {
       // Generate 1500 ascending UIDs: [1, 2, ..., 1500]
       const allUids = Array.from({ length: 1500 }, (_, i) => i + 1);
       mockSearch.mockResolvedValueOnce(allUids);
