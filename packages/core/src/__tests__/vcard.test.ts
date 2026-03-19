@@ -97,6 +97,47 @@ describe("parseVCard", () => {
     expect(contact.fullName).toBe("V4 Person");
     expect(contact.emails).toEqual([{ value: "v4@test.com" }]);
   });
+
+  it("extracts ORG first component only, stripping trailing semicolons", () => {
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:o1\nFN:Org Test\nORG:Acme Corp;Engineering;Platform\nEND:VCARD`;
+    const contact = parseVCard(vcard);
+    expect(contact.organization).toBe("Acme Corp");
+  });
+
+  it("parses ROLE, NICKNAME, BDAY, and CATEGORIES", () => {
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:f1\nFN:Fields Test\nROLE:Project Lead\nNICKNAME:Johnny\nBDAY:1990-01-01\nCATEGORIES:Friends,Family,VIP\nEND:VCARD`;
+    const contact = parseVCard(vcard);
+    expect(contact.role).toBe("Project Lead");
+    expect(contact.nickname).toBe("Johnny");
+    expect(contact.birthday).toBe("1990-01-01");
+    expect(contact.categories).toEqual(["Friends", "Family", "VIP"]);
+  });
+
+  it("extracts BDAY as-is without normalizing format", () => {
+    const compact = `BEGIN:VCARD\nVERSION:3.0\nUID:b1\nFN:Compact\nBDAY:19900101\nEND:VCARD`;
+    expect(parseVCard(compact).birthday).toBe("19900101");
+    const partial = `BEGIN:VCARD\nVERSION:3.0\nUID:b2\nFN:Partial\nBDAY:--01-01\nEND:VCARD`;
+    expect(parseVCard(partial).birthday).toBe("--01-01");
+  });
+
+  it("captures unknown properties in otherProperties", () => {
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:r1\nFN:Raw Test\nPHOTO;VALUE=uri:https://example.com/photo.jpg\nX-SOCIALPROFILE;TYPE=twitter:@test\nEND:VCARD`;
+    const contact = parseVCard(vcard);
+    expect(contact.otherProperties).toEqual([
+      "PHOTO;VALUE=uri:https://example.com/photo.jpg",
+      "X-SOCIALPROFILE;TYPE=twitter:@test",
+    ]);
+  });
+
+  it("round-trips otherProperties through build and parse", () => {
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:rt1\nFN:Roundtrip\nPHOTO;VALUE=uri:https://example.com/photo.jpg\nX-CUSTOM:hello\nEND:VCARD`;
+    const contact = parseVCard(vcard);
+    const rebuilt = buildVCard(contact);
+    const reparsed = parseVCard(rebuilt);
+    expect(reparsed.otherProperties).toEqual(contact.otherProperties);
+    expect(reparsed.uid).toBe("rt1");
+    expect(reparsed.fullName).toBe("Roundtrip");
+  });
 });
 
 describe("buildVCard", () => {
@@ -167,6 +208,27 @@ describe("buildVCard", () => {
     };
     const vcard = buildVCard(contact);
     expect(vcard).toContain("ADR;TYPE=home:;;123 Main St;Denver;CO;80202;US");
+  });
+
+  it("builds ROLE, NICKNAME, BDAY, and CATEGORIES lines", () => {
+    const contact: Contact = {
+      uid: "sf1",
+      fullName: "Simple Fields",
+      emails: [],
+      phones: [],
+      addresses: [],
+      urls: [],
+      role: "Project Lead",
+      nickname: "Johnny",
+      birthday: "1990-01-01",
+      categories: ["Friends", "Family"],
+      otherProperties: [],
+    };
+    const vcard = buildVCard(contact);
+    expect(vcard).toContain("ROLE:Project Lead");
+    expect(vcard).toContain("NICKNAME:Johnny");
+    expect(vcard).toContain("BDAY:1990-01-01");
+    expect(vcard).toContain("CATEGORIES:Friends,Family");
   });
 
   it("builds vCard with only required fields", () => {

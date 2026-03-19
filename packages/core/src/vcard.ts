@@ -40,9 +40,42 @@ export function parseVCard(data: string): Contact {
   const emails = extractTypedAll(lines, "EMAIL");
   const phones = extractTypedAll(lines, "TEL");
   const urls = extractTypedAll(lines, "URL");
-  const organization = extractFirst(lines, "ORG");
+  const orgRaw = extractFirst(lines, "ORG");
+  const organization = orgRaw ? orgRaw.split(";")[0].trim() || undefined : undefined;
   const title = extractFirst(lines, "TITLE");
   const note = extractFirst(lines, "NOTE");
+  const role = extractFirst(lines, "ROLE");
+  const nickname = extractFirst(lines, "NICKNAME");
+  const birthday = extractFirst(lines, "BDAY");
+  const categoriesRaw = extractFirst(lines, "CATEGORIES");
+  const categories = categoriesRaw ? categoriesRaw.split(",").map((c) => c.trim()) : undefined;
+
+  const KNOWN = new Set([
+    "BEGIN",
+    "END",
+    "VERSION",
+    "UID",
+    "FN",
+    "N",
+    "EMAIL",
+    "TEL",
+    "ORG",
+    "TITLE",
+    "NOTE",
+    "ADR",
+    "URL",
+    "BDAY",
+    "NICKNAME",
+    "CATEGORIES",
+    "ROLE",
+  ]);
+  const otherProperties: string[] = [];
+  for (const line of lines) {
+    const propName = line.split(/[:;]/)[0].toUpperCase();
+    if (!KNOWN.has(propName) && line.trim()) {
+      otherProperties.push(line);
+    }
+  }
 
   let firstName: string | undefined;
   let lastName: string | undefined;
@@ -63,8 +96,12 @@ export function parseVCard(data: string): Contact {
     urls,
     organization,
     title,
+    role,
+    nickname,
+    birthday,
+    categories,
     note,
-    otherProperties: [],
+    otherProperties,
   };
 }
 
@@ -107,6 +144,18 @@ export function buildVCard(contact: Contact): string {
   }
   if (contact.title) {
     lines.push(`TITLE:${contact.title}`);
+  }
+  if (contact.role) {
+    lines.push(`ROLE:${contact.role}`);
+  }
+  if (contact.nickname) {
+    lines.push(`NICKNAME:${contact.nickname}`);
+  }
+  if (contact.birthday) {
+    lines.push(`BDAY:${contact.birthday}`);
+  }
+  if (contact.categories && contact.categories.length > 0) {
+    lines.push(`CATEGORIES:${contact.categories.join(",")}`);
   }
   if (contact.note) {
     lines.push(`NOTE:${contact.note}`);
