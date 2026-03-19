@@ -40,4 +40,42 @@ describe("CONTACT_TOOLS definitions", () => {
     const tool = CONTACT_TOOLS.find((t) => t.name === "resolve_contact")!;
     expect(tool.inputSchema.required).toContain("name");
   });
+
+  it("create_contact has typed email/phone schemas and new fields", () => {
+    const tool = CONTACT_TOOLS.find((t) => t.name === "create_contact")!;
+    const props = tool.inputSchema.properties as Record<string, any>;
+
+    // emails should be array of objects with type and value
+    expect(props.emails.type).toBe("array");
+    expect(props.emails.items.type).toBe("object");
+    expect(props.emails.items.properties.value).toBeDefined();
+    expect(props.emails.items.properties.type).toBeDefined();
+
+    // phones should be array of objects with type and value
+    expect(props.phones.type).toBe("array");
+    expect(props.phones.items.type).toBe("object");
+    expect(props.phones.items.properties.value).toBeDefined();
+    expect(props.phones.items.properties.type).toBeDefined();
+
+    // new fields exist
+    expect(props.addresses).toBeDefined();
+    expect(props.urls).toBeDefined();
+    expect(props.role).toBeDefined();
+    expect(props.nickname).toBeDefined();
+    expect(props.birthday).toBeDefined();
+    expect(props.categories).toBeDefined();
+  });
+
+  it("update_contact has typed email/phone schemas and new fields", () => {
+    const tool = CONTACT_TOOLS.find((t) => t.name === "update_contact")!;
+    const props = tool.inputSchema.properties as Record<string, any>;
+    expect(props.emails.type).toBe("array");
+    expect(props.emails.items.type).toBe("object");
+    expect(props.addresses).toBeDefined();
+    expect(props.urls).toBeDefined();
+    expect(props.role).toBeDefined();
+    expect(props.nickname).toBeDefined();
+    expect(props.birthday).toBeDefined();
+    expect(props.categories).toBeDefined();
+  });
 });
