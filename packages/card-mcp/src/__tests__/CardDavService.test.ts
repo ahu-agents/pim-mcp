@@ -83,7 +83,7 @@ describe("CardDavService", () => {
       expect(contacts).toHaveLength(1);
       expect(contacts[0].uid).toBe("uid-1");
       expect(contacts[0].fullName).toBe("John Doe");
-      expect(contacts[0].emails).toEqual(["john@test.com"]);
+      expect(contacts[0].emails).toEqual([{ value: "john@test.com" }]);
     });
   });
 
@@ -94,8 +94,11 @@ describe("CardDavService", () => {
       await service.createContact("/dav/addressbooks/users/miguel/contacts/", {
         uid: "new-1",
         fullName: "New Person",
-        emails: ["new@test.com"],
+        emails: [{ value: "new@test.com" }],
         phones: [],
+        addresses: [],
+        urls: [],
+        otherProperties: [],
       });
 
       expect(__mockClient.createVCard).toHaveBeenCalledWith(
@@ -120,7 +123,7 @@ describe("CardDavService", () => {
       await service.connect();
       await service.updateContact("/dav/addressbooks/users/miguel/contacts/", "uid-1", {
         fullName: "New Name",
-        emails: ["new@test.com"],
+        emails: [{ value: "new@test.com" }],
       });
 
       expect(__mockClient.updateVCard).toHaveBeenCalledWith(
@@ -249,6 +252,56 @@ describe("CardDavService", () => {
         "John",
       );
       expect(result).toBeNull();
+    });
+  });
+
+  describe("otherProperties preservation", () => {
+    it("preserves otherProperties through update round-trip", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.updateVCard.mockClear();
+      __mockClient.fetchVCards.mockResolvedValueOnce([
+        {
+          url: "/dav/contacts/uid-1.vcf",
+          etag: '"etag1"',
+          data: "BEGIN:VCARD\nVERSION:3.0\nUID:uid-1\nFN:Test\nEMAIL:test@test.com\nPHOTO;VALUE=uri:https://example.com/photo.jpg\nX-CUSTOM:keepme\nEND:VCARD",
+        },
+      ]);
+
+      await service.connect();
+      await service.updateContact("/dav/addressbooks/users/miguel/contacts/", "uid-1", {
+        fullName: "Updated Name",
+      });
+
+      const updateCall = __mockClient.updateVCard.mock.calls[0][0];
+      expect(updateCall.vCard.data).toContain("PHOTO;VALUE=uri:https://example.com/photo.jpg");
+      expect(updateCall.vCard.data).toContain("X-CUSTOM:keepme");
+      expect(updateCall.vCard.data).toContain("FN:Updated Name");
+    });
+  });
+
+  describe("multi-term search", () => {
+    it("supports multi-term tokenized search with AND semantics", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.fetchVCards.mockResolvedValueOnce([
+        {
+          url: "/dav/contacts/1.vcf",
+          etag: '"e1"',
+          data: "BEGIN:VCARD\nVERSION:3.0\nUID:1\nFN:John Doe\nEMAIL;TYPE=work:john@acme.com\nORG:ACME\nEND:VCARD",
+        },
+        {
+          url: "/dav/contacts/2.vcf",
+          etag: '"e2"',
+          data: "BEGIN:VCARD\nVERSION:3.0\nUID:2\nFN:Jane Acme\nEMAIL:jane@other.com\nEND:VCARD",
+        },
+      ]);
+
+      await service.connect();
+      const results = await service.searchContacts(
+        "/dav/addressbooks/users/miguel/contacts/",
+        "acme john",
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0].uid).toBe("1");
     });
   });
 });

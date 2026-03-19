@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { type Contact, ContactError, ErrorCode, toPimError } from "@miguelarios/pim-core";
+import {
+  type Contact,
+  ContactError,
+  ErrorCode,
+  type PostalAddress,
+  type TypedValue,
+  toPimError,
+} from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { CardDavService } from "../services/CardDavService.js";
 
@@ -52,16 +59,65 @@ export const CONTACT_TOOLS: Tool[] = [
         lastName: { type: "string", description: "Last/family name" },
         emails: {
           type: "array",
-          items: { type: "string" },
-          description: "Email addresses",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "Email type (e.g., 'home', 'work')" },
+              value: { type: "string", description: "Email address" },
+            },
+            required: ["value"],
+          },
+          description: "Email addresses with optional type",
         },
         phones: {
           type: "array",
-          items: { type: "string" },
-          description: "Phone numbers",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "Phone type (e.g., 'cell', 'home', 'work')" },
+              value: { type: "string", description: "Phone number" },
+            },
+            required: ["value"],
+          },
+          description: "Phone numbers with optional type",
+        },
+        addresses: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "Address type (e.g., 'home', 'work')" },
+              street: { type: "string", description: "Street address" },
+              city: { type: "string", description: "City" },
+              state: { type: "string", description: "State/province" },
+              postalCode: { type: "string", description: "Postal/ZIP code" },
+              country: { type: "string", description: "Country" },
+            },
+          },
+          description: "Postal addresses",
+        },
+        urls: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "URL type (e.g., 'home', 'work')" },
+              value: { type: "string", description: "URL" },
+            },
+            required: ["value"],
+          },
+          description: "URLs with optional type",
         },
         organization: { type: "string", description: "Company/organization name" },
         title: { type: "string", description: "Job title" },
+        role: { type: "string", description: "Role/function within organization" },
+        nickname: { type: "string", description: "Nickname" },
+        birthday: { type: "string", description: "Birthday (YYYY-MM-DD)" },
+        categories: {
+          type: "array",
+          items: { type: "string" },
+          description: "Contact categories/tags",
+        },
         note: { type: "string", description: "Free-text note" },
         addressBook: {
           type: "string",
@@ -84,16 +140,65 @@ export const CONTACT_TOOLS: Tool[] = [
         lastName: { type: "string", description: "New last name" },
         emails: {
           type: "array",
-          items: { type: "string" },
-          description: "New email addresses (replaces existing)",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "Email type (e.g., 'home', 'work')" },
+              value: { type: "string", description: "Email address" },
+            },
+            required: ["value"],
+          },
+          description: "New email addresses with optional type (replaces existing)",
         },
         phones: {
           type: "array",
-          items: { type: "string" },
-          description: "New phone numbers (replaces existing)",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "Phone type (e.g., 'cell', 'home', 'work')" },
+              value: { type: "string", description: "Phone number" },
+            },
+            required: ["value"],
+          },
+          description: "New phone numbers with optional type (replaces existing)",
+        },
+        addresses: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "Address type (e.g., 'home', 'work')" },
+              street: { type: "string", description: "Street address" },
+              city: { type: "string", description: "City" },
+              state: { type: "string", description: "State/province" },
+              postalCode: { type: "string", description: "Postal/ZIP code" },
+              country: { type: "string", description: "Country" },
+            },
+          },
+          description: "New postal addresses (replaces existing)",
+        },
+        urls: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "URL type (e.g., 'home', 'work')" },
+              value: { type: "string", description: "URL" },
+            },
+            required: ["value"],
+          },
+          description: "New URLs with optional type (replaces existing)",
         },
         organization: { type: "string", description: "New organization" },
         title: { type: "string", description: "New job title" },
+        role: { type: "string", description: "New role/function within organization" },
+        nickname: { type: "string", description: "New nickname" },
+        birthday: { type: "string", description: "New birthday (YYYY-MM-DD)" },
+        categories: {
+          type: "array",
+          items: { type: "string" },
+          description: "New contact categories/tags (replaces existing)",
+        },
         note: { type: "string", description: "New note" },
         addressBook: {
           type: "string",
@@ -175,11 +280,18 @@ export async function handleContactTool(
           fullName: args.fullName as string,
           firstName: args.firstName as string | undefined,
           lastName: args.lastName as string | undefined,
-          emails: (args.emails as string[]) ?? [],
-          phones: (args.phones as string[]) ?? [],
+          emails: (args.emails as TypedValue[]) ?? [],
+          phones: (args.phones as TypedValue[]) ?? [],
+          addresses: (args.addresses as PostalAddress[]) ?? [],
+          urls: (args.urls as TypedValue[]) ?? [],
           organization: args.organization as string | undefined,
           title: args.title as string | undefined,
+          role: args.role as string | undefined,
+          nickname: args.nickname as string | undefined,
+          birthday: args.birthday as string | undefined,
+          categories: args.categories as string[] | undefined,
           note: args.note as string | undefined,
+          otherProperties: [],
         };
         await service.createContact(addressBookUrl, contact);
         return ok(
@@ -189,14 +301,20 @@ export async function handleContactTool(
 
       case "update_contact": {
         const uid = args.uid as string;
-        const updates: Partial<Omit<Contact, "uid">> = {};
+        const updates: Partial<Omit<Contact, "uid" | "otherProperties">> = {};
         if (args.fullName !== undefined) updates.fullName = args.fullName as string;
         if (args.firstName !== undefined) updates.firstName = args.firstName as string;
         if (args.lastName !== undefined) updates.lastName = args.lastName as string;
-        if (args.emails !== undefined) updates.emails = args.emails as string[];
-        if (args.phones !== undefined) updates.phones = args.phones as string[];
+        if (args.emails !== undefined) updates.emails = args.emails as TypedValue[];
+        if (args.phones !== undefined) updates.phones = args.phones as TypedValue[];
+        if (args.addresses !== undefined) updates.addresses = args.addresses as PostalAddress[];
+        if (args.urls !== undefined) updates.urls = args.urls as TypedValue[];
         if (args.organization !== undefined) updates.organization = args.organization as string;
         if (args.title !== undefined) updates.title = args.title as string;
+        if (args.role !== undefined) updates.role = args.role as string;
+        if (args.nickname !== undefined) updates.nickname = args.nickname as string;
+        if (args.birthday !== undefined) updates.birthday = args.birthday as string;
+        if (args.categories !== undefined) updates.categories = args.categories as string[];
         if (args.note !== undefined) updates.note = args.note as string;
 
         await service.updateContact(addressBookUrl, uid, updates);
