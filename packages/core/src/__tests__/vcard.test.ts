@@ -22,8 +22,14 @@ describe("parseVCard", () => {
     expect(contact.fullName).toBe("John Doe");
     expect(contact.lastName).toBe("Doe");
     expect(contact.firstName).toBe("John");
-    expect(contact.emails).toEqual([{ value: "john@example.com" }, { value: "john@work.com" }]);
-    expect(contact.phones).toEqual([{ value: "+1-555-0100" }, { value: "+1-555-0100" }]);
+    expect(contact.emails).toEqual([
+      { type: "home", value: "john@example.com" },
+      { type: "work", value: "john@work.com" },
+    ]);
+    expect(contact.phones).toEqual([
+      { type: "cell", value: "+1-555-0100" },
+      { type: "home", value: "+1-555-0100" },
+    ]);
     expect(contact.organization).toBe("ACME Inc");
     expect(contact.title).toBe("Developer");
     expect(contact.note).toBe("Met at conference");
@@ -36,6 +42,23 @@ describe("parseVCard", () => {
     expect(contact.fullName).toBe("Jane");
     expect(contact.emails).toEqual([]);
     expect(contact.phones).toEqual([]);
+  });
+
+  it("extracts TYPE parameter from email/phone/url lines", () => {
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:t1\nFN:Test\nEMAIL;TYPE=WORK:work@test.com\nEMAIL:plain@test.com\nTEL;TYPE=CELL:+1-555-0100\nTEL;TYPE=WORK;TYPE=VOICE:+1-555-0100\nURL;TYPE=home:https://example.com\nURL:https://other.com\nEND:VCARD`;
+    const contact = parseVCard(vcard);
+    expect(contact.emails).toEqual([
+      { type: "work", value: "work@test.com" },
+      { value: "plain@test.com" },
+    ]);
+    expect(contact.phones).toEqual([
+      { type: "cell", value: "+1-555-0100" },
+      { type: "work,voice", value: "+1-555-0100" },
+    ]);
+    expect(contact.urls).toEqual([
+      { type: "home", value: "https://example.com" },
+      { value: "https://other.com" },
+    ]);
   });
 
   it("handles vCard 4.0", () => {
@@ -75,6 +98,23 @@ describe("buildVCard", () => {
     expect(vcard).toContain("TITLE:Manager");
     expect(vcard).toContain("NOTE:A note");
     expect(vcard).toContain("END:VCARD");
+  });
+
+  it("builds typed EMAIL/TEL/URL lines with TYPE parameter", () => {
+    const contact: Contact = {
+      uid: "tb1",
+      fullName: "Type Build",
+      emails: [{ type: "work", value: "work@test.com" }, { value: "plain@test.com" }],
+      phones: [{ type: "cell", value: "+1-555-0100" }],
+      addresses: [],
+      urls: [{ type: "home", value: "https://example.com" }],
+      otherProperties: [],
+    };
+    const vcard = buildVCard(contact);
+    expect(vcard).toContain("EMAIL;TYPE=work:work@test.com");
+    expect(vcard).toContain("EMAIL:plain@test.com");
+    expect(vcard).toContain("TEL;TYPE=cell:+1-555-0100");
+    expect(vcard).toContain("URL;TYPE=home:https://example.com");
   });
 
   it("builds vCard with only required fields", () => {

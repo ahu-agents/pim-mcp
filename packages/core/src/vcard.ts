@@ -37,8 +37,9 @@ export function parseVCard(data: string): Contact {
   const uid = extractFirst(lines, "UID") ?? "";
   const fullName = extractFirst(lines, "FN") ?? "";
   const n = extractFirst(lines, "N");
-  const emails = extractAll(lines, "EMAIL").map((v) => ({ value: v }));
-  const phones = extractAll(lines, "TEL").map((v) => ({ value: v }));
+  const emails = extractTypedAll(lines, "EMAIL");
+  const phones = extractTypedAll(lines, "TEL");
+  const urls = extractTypedAll(lines, "URL");
   const organization = extractFirst(lines, "ORG");
   const title = extractFirst(lines, "TITLE");
   const note = extractFirst(lines, "NOTE");
@@ -59,7 +60,7 @@ export function parseVCard(data: string): Contact {
     emails,
     phones,
     addresses: [],
-    urls: [],
+    urls,
     organization,
     title,
     note,
@@ -138,6 +139,27 @@ function extractFirst(lines: string[], property: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/** Extract all values for a property with optional TYPE parameter */
+function extractTypedAll(lines: string[], property: string): TypedValue[] {
+  const results: TypedValue[] = [];
+  for (const line of lines) {
+    const upper = line.toUpperCase();
+    if (upper.startsWith(`${property}:`) || upper.startsWith(`${property};`)) {
+      const colonIndex = line.indexOf(":");
+      if (colonIndex === -1) continue;
+      const value = line.slice(colonIndex + 1).trim();
+      const paramSection = line.slice(property.length, colonIndex);
+      const types: string[] = [];
+      for (const match of paramSection.matchAll(/TYPE=([^;,\s]+)/gi)) {
+        types.push(match[1].toLowerCase().trim());
+      }
+      const type = types.length > 0 ? types.join(",") : undefined;
+      results.push(type ? { type, value } : { value });
+    }
+  }
+  return results;
 }
 
 /** Extract all values for a property (e.g., multiple EMAIL lines) */
