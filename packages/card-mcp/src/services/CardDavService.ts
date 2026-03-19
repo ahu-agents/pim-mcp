@@ -100,7 +100,7 @@ export class CardDavService {
   async updateContact(
     addressBookUrl: string,
     uid: string,
-    updates: Partial<Omit<Contact, "uid">>,
+    updates: Partial<Omit<Contact, "uid" | "otherProperties">>,
   ): Promise<void> {
     const client = await this.ensureConnected();
     const existing = await this.findVCard(addressBookUrl, uid);
@@ -116,9 +116,16 @@ export class CardDavService {
       lastName: updates.lastName ?? current.lastName,
       emails: updates.emails ?? current.emails,
       phones: updates.phones ?? current.phones,
+      addresses: updates.addresses ?? current.addresses,
+      urls: updates.urls ?? current.urls,
       organization: updates.organization ?? current.organization,
       title: updates.title ?? current.title,
+      role: updates.role ?? current.role,
+      nickname: updates.nickname ?? current.nickname,
+      birthday: updates.birthday ?? current.birthday,
+      categories: updates.categories ?? current.categories,
       note: updates.note ?? current.note,
+      otherProperties: current.otherProperties,
     };
 
     try {
@@ -152,20 +159,31 @@ export class CardDavService {
 
   async searchContacts(addressBookUrl: string, query: string): Promise<Contact[]> {
     const contacts = await this.fetchContacts(addressBookUrl);
-    const q = query.toLowerCase();
+    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return contacts;
+
     return contacts.filter((c) => {
       const searchable = [
         c.fullName,
         c.firstName,
         c.lastName,
         c.organization,
-        ...c.emails,
-        ...c.phones,
+        c.title,
+        c.role,
+        c.nickname,
+        ...(c.categories ?? []),
+        ...c.emails.map((e) => e.value),
+        ...c.phones.map((e) => e.value),
+        ...c.urls.map((u) => u.value),
+        ...c.addresses.map((a) =>
+          [a.street, a.city, a.state, a.postalCode, a.country].filter(Boolean).join(" "),
+        ),
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-      return searchable.includes(q);
+
+      return tokens.every((token) => searchable.includes(token));
     });
   }
 
@@ -176,7 +194,7 @@ export class CardDavService {
     const matches = await this.searchContacts(addressBookUrl, name);
     for (const contact of matches) {
       if (contact.emails.length > 0) {
-        return { fullName: contact.fullName, email: contact.emails[0] };
+        return { fullName: contact.fullName, email: contact.emails[0].value };
       }
     }
     return null;
