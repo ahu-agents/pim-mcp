@@ -59,7 +59,7 @@ export function parseVCard(data: string): Contact {
     lastName,
     emails,
     phones,
-    addresses: [],
+    addresses: extractAddresses(lines),
     urls,
     organization,
     title,
@@ -158,6 +158,42 @@ function extractTypedAll(lines: string[], property: string): TypedValue[] {
       const type = types.length > 0 ? types.join(",") : undefined;
       results.push(type ? { type, value } : { value });
     }
+  }
+  return results;
+}
+
+/** Extract ADR lines into PostalAddress objects */
+function extractAddresses(lines: string[]): PostalAddress[] {
+  const results: PostalAddress[] = [];
+  for (const line of lines) {
+    const upper = line.toUpperCase();
+    if (!upper.startsWith("ADR:") && !upper.startsWith("ADR;")) continue;
+    const colonIndex = line.indexOf(":");
+    if (colonIndex === -1) continue;
+
+    const paramSection = line.slice(3, colonIndex);
+    const types: string[] = [];
+    for (const match of paramSection.matchAll(/TYPE=([^;,\s]+)/gi)) {
+      types.push(match[1].toLowerCase().trim());
+    }
+    const type = types.length > 0 ? types.join(",") : undefined;
+
+    const parts = line.slice(colonIndex + 1).split(";");
+    const streetParts = [parts[0], parts[1], parts[2]].filter(Boolean);
+    const street = streetParts.join(", ") || undefined;
+    const city = parts[3] || undefined;
+    const state = parts[4] || undefined;
+    const postalCode = parts[5] || undefined;
+    const country = parts[6] || undefined;
+
+    const addr: PostalAddress = {};
+    if (type) addr.type = type;
+    if (street) addr.street = street;
+    if (city) addr.city = city;
+    if (state) addr.state = state;
+    if (postalCode) addr.postalCode = postalCode;
+    if (country) addr.country = country;
+    results.push(addr);
   }
   return results;
 }

@@ -61,6 +61,35 @@ describe("parseVCard", () => {
     ]);
   });
 
+  it("parses ADR lines into PostalAddress objects", () => {
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:a1\nFN:Addr Test\nADR;TYPE=home:;;123 Main St;Denver;CO;80202;US\nADR;TYPE=work:PO Box 100;Suite 2;456 Oak Ave;Austin;TX;73301;US\nEND:VCARD`;
+    const contact = parseVCard(vcard);
+    expect(contact.addresses).toEqual([
+      {
+        type: "home",
+        street: "123 Main St",
+        city: "Denver",
+        state: "CO",
+        postalCode: "80202",
+        country: "US",
+      },
+      {
+        type: "work",
+        street: "PO Box 100, Suite 2, 456 Oak Ave",
+        city: "Austin",
+        state: "TX",
+        postalCode: "73301",
+        country: "US",
+      },
+    ]);
+  });
+
+  it("handles ADR with empty components", () => {
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:a2\nFN:Minimal Addr\nADR:;;;;;;US\nEND:VCARD`;
+    const contact = parseVCard(vcard);
+    expect(contact.addresses).toEqual([{ country: "US" }]);
+  });
+
   it("handles vCard 4.0", () => {
     const v4 = `BEGIN:VCARD\nVERSION:4.0\nUID:v4-1\nFN:V4 Person\nEMAIL:v4@test.com\nEND:VCARD`;
     const contact = parseVCard(v4);
@@ -115,6 +144,29 @@ describe("buildVCard", () => {
     expect(vcard).toContain("EMAIL:plain@test.com");
     expect(vcard).toContain("TEL;TYPE=cell:+1-555-0100");
     expect(vcard).toContain("URL;TYPE=home:https://example.com");
+  });
+
+  it("builds ADR lines from PostalAddress objects", () => {
+    const contact: Contact = {
+      uid: "ab1",
+      fullName: "Addr Build",
+      emails: [],
+      phones: [],
+      addresses: [
+        {
+          type: "home",
+          street: "123 Main St",
+          city: "Denver",
+          state: "CO",
+          postalCode: "80202",
+          country: "US",
+        },
+      ],
+      urls: [],
+      otherProperties: [],
+    };
+    const vcard = buildVCard(contact);
+    expect(vcard).toContain("ADR;TYPE=home:;;123 Main St;Denver;CO;80202;US");
   });
 
   it("builds vCard with only required fields", () => {
