@@ -247,17 +247,4 @@ function extractAddresses(lines: string[]): PostalAddress[] {
   return results;
 }
 
-/** Extract all values for a property (e.g., multiple EMAIL lines) */
-function extractAll(lines: string[], property: string): string[] {
-  const results: string[] = [];
-  for (const line of lines) {
-    const upper = line.toUpperCase();
-    if (upper.startsWith(`${property}:`) || upper.startsWith(`${property};`)) {
-      const colonIndex = line.indexOf(":");
-      if (colonIndex !== -1) {
-        results.push(line.slice(colonIndex + 1).trim());
-      }
-    }
-  }
-  return results;
-}
+
