@@ -22,8 +22,8 @@ describe("parseVCard", () => {
     expect(contact.fullName).toBe("John Doe");
     expect(contact.lastName).toBe("Doe");
     expect(contact.firstName).toBe("John");
-    expect(contact.emails).toEqual(["john@example.com", "john@work.com"]);
-    expect(contact.phones).toEqual(["+1-555-0100", "+1-555-0100"]);
+    expect(contact.emails).toEqual([{ value: "john@example.com" }, { value: "john@work.com" }]);
+    expect(contact.phones).toEqual([{ value: "+1-555-0100" }, { value: "+1-555-0100" }]);
     expect(contact.organization).toBe("ACME Inc");
     expect(contact.title).toBe("Developer");
     expect(contact.note).toBe("Met at conference");
@@ -43,7 +43,7 @@ describe("parseVCard", () => {
     const contact = parseVCard(v4);
     expect(contact.uid).toBe("v4-1");
     expect(contact.fullName).toBe("V4 Person");
-    expect(contact.emails).toEqual(["v4@test.com"]);
+    expect(contact.emails).toEqual([{ value: "v4@test.com" }]);
   });
 });
 
@@ -54,11 +54,14 @@ describe("buildVCard", () => {
       fullName: "Jane Smith",
       firstName: "Jane",
       lastName: "Smith",
-      emails: ["jane@example.com"],
-      phones: ["+1-555-0100"],
+      emails: [{ value: "jane@example.com" }],
+      phones: [{ value: "+1-555-0100" }],
+      addresses: [],
+      urls: [],
       organization: "Widgets Co",
       title: "Manager",
       note: "A note",
+      otherProperties: [],
     };
     const vcard = buildVCard(contact);
     expect(vcard).toContain("BEGIN:VCARD");
@@ -80,6 +83,9 @@ describe("buildVCard", () => {
       fullName: "Minimal",
       emails: [],
       phones: [],
+      addresses: [],
+      urls: [],
+      otherProperties: [],
     };
     const vcard = buildVCard(contact);
     expect(vcard).toContain("FN:Minimal");

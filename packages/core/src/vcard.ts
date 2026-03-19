@@ -1,13 +1,34 @@
+export interface TypedValue {
+  type?: string;
+  value: string;
+}
+
+export interface PostalAddress {
+  type?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+}
+
 export interface Contact {
   uid: string;
   fullName: string;
   firstName?: string;
   lastName?: string;
-  emails: string[];
-  phones: string[];
+  emails: TypedValue[];
+  phones: TypedValue[];
+  addresses: PostalAddress[];
+  urls: TypedValue[];
   organization?: string;
   title?: string;
+  role?: string;
+  nickname?: string;
+  birthday?: string;
+  categories?: string[];
   note?: string;
+  otherProperties: string[];
 }
 
 export function parseVCard(data: string): Contact {
@@ -16,8 +37,8 @@ export function parseVCard(data: string): Contact {
   const uid = extractFirst(lines, "UID") ?? "";
   const fullName = extractFirst(lines, "FN") ?? "";
   const n = extractFirst(lines, "N");
-  const emails = extractAll(lines, "EMAIL");
-  const phones = extractAll(lines, "TEL");
+  const emails = extractAll(lines, "EMAIL").map((v) => ({ value: v }));
+  const phones = extractAll(lines, "TEL").map((v) => ({ value: v }));
   const organization = extractFirst(lines, "ORG");
   const title = extractFirst(lines, "TITLE");
   const note = extractFirst(lines, "NOTE");
@@ -30,7 +51,20 @@ export function parseVCard(data: string): Contact {
     firstName = parts[1] || undefined;
   }
 
-  return { uid, fullName, firstName, lastName, emails, phones, organization, title, note };
+  return {
+    uid,
+    fullName,
+    firstName,
+    lastName,
+    emails,
+    phones,
+    addresses: [],
+    urls: [],
+    organization,
+    title,
+    note,
+    otherProperties: [],
+  };
 }
 
 export function buildVCard(contact: Contact): string {
@@ -46,10 +80,26 @@ export function buildVCard(contact: Contact): string {
   }
 
   for (const email of contact.emails) {
-    lines.push(`EMAIL:${email}`);
+    lines.push(email.type ? `EMAIL;TYPE=${email.type}:${email.value}` : `EMAIL:${email.value}`);
   }
   for (const phone of contact.phones) {
-    lines.push(`TEL:${phone}`);
+    lines.push(phone.type ? `TEL;TYPE=${phone.type}:${phone.value}` : `TEL:${phone.value}`);
+  }
+  for (const url of contact.urls) {
+    lines.push(url.type ? `URL;TYPE=${url.type}:${url.value}` : `URL:${url.value}`);
+  }
+  for (const addr of contact.addresses) {
+    const parts = [
+      "",
+      "",
+      addr.street ?? "",
+      addr.city ?? "",
+      addr.state ?? "",
+      addr.postalCode ?? "",
+      addr.country ?? "",
+    ];
+    const line = addr.type ? `ADR;TYPE=${addr.type}:${parts.join(";")}` : `ADR:${parts.join(";")}`;
+    lines.push(line);
   }
   if (contact.organization) {
     lines.push(`ORG:${contact.organization}`);
@@ -59,6 +109,9 @@ export function buildVCard(contact: Contact): string {
   }
   if (contact.note) {
     lines.push(`NOTE:${contact.note}`);
+  }
+  for (const raw of contact.otherProperties) {
+    lines.push(raw);
   }
 
   lines.push("END:VCARD");
