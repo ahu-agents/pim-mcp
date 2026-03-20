@@ -126,14 +126,14 @@ The tool now supports three modes based on parameter combinations:
 
 ### Validation
 
-- If `subject` is omitted and `replyToUid` is not provided → return validation error (`VALIDATION_FAILED`): "subject is required when not replying to an existing email"
+- If `subject` is omitted and `replyToUid` is not provided → return validation error (`VALIDATION_ERROR`): "subject is required when not replying to an existing email"
 - If `subject` is provided explicitly → use it as-is (override path, even for replies)
 - If `subject` is omitted and `replyToUid` is provided → auto-derive as `Re: <original subject>`
 
 ### Internal Flow: Send Mode (`saveToDrafts` is false or omitted)
 
 ```
-1. Validate: if no subject and no replyToUid, return VALIDATION_FAILED
+1. Validate: if no subject and no replyToUid, return VALIDATION_ERROR
 2. If replyToUid provided:
    a. Fetch original email from replyToFolder (default INBOX)
    b. Extract Message-ID → set as In-Reply-To header
@@ -155,7 +155,7 @@ The tool now supports three modes based on parameter combinations:
 ### Internal Flow: Draft Mode (`saveToDrafts` is true)
 
 ```
-1. Validate: if no subject and no replyToUid, return VALIDATION_FAILED
+1. Validate: if no subject and no replyToUid, return VALIDATION_ERROR
 2. If replyToUid provided:
    a–d. Same threading header construction as send mode
 3. Build RFC 822 message via nodemailer MailComposer (same as send mode)
@@ -222,7 +222,7 @@ interface EmailFull {
 
 ### Implementation Notes
 
-The `messageId` field already exists on `EmailSummary` but the parsing in `fetchEmail` already extracts it via `mailparser`. The two new fields come from `mailparser`'s `parsed.inReplyTo` (string) and `parsed.references` (already an array of strings — no splitting needed).
+The `messageId` field already exists on `EmailSummary` but the parsing in `fetchEmail` already extracts it via `mailparser`. The two new fields come from `mailparser`'s `parsed.inReplyTo` and `parsed.references` (the latter is a string of space-separated Message-IDs that should be split into an array).
 
 ---
 
@@ -611,15 +611,11 @@ Separate spec, next phase after this change ships and is validated against Mailb
 ### `required` Field Note
 
 The `send_email` tool's `required` is `["to"]` only. Subject is conditionally required:
-- **No `replyToUid`**: subject must be provided or the tool returns `VALIDATION_FAILED`
+- **No `replyToUid`**: subject must be provided or the tool returns `VALIDATION_ERROR`
 - **With `replyToUid`**: subject is optional — auto-derived as `Re: <original subject>` when omitted
 - **Explicit subject always wins**: if the agent passes `subject`, it's used as-is regardless of `replyToUid`
 
 This keeps the agent interface minimal for replies (just pass `replyToUid` and body) while still allowing subject overrides when needed.
-
-### Partial Failure: SMTP Succeeds, Sent Copy Fails
-
-If the SMTP send succeeds but the IMAP APPEND to Sent fails (connection dropped, quota exceeded, etc.), the email is delivered but not in the Sent folder. In this case, log a warning and still return `{ status: "sent" }` with the messageId. The email was delivered — that is the primary success condition. The Sent copy failure should not mask it or cause a retry of the SMTP send.
 
 ### Mailbox.org Behavior
 
