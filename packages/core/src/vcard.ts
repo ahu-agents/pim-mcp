@@ -246,5 +246,3 @@ function extractAddresses(lines: string[]): PostalAddress[] {
   }
   return results;
 }
-
-
