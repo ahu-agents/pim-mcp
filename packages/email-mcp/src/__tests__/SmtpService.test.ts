@@ -135,4 +135,75 @@ describe("SmtpService", () => {
       );
     });
   });
+
+  describe("composeRawMessage", () => {
+    it("composes a basic email to RFC 822 Buffer", async () => {
+      const raw = await service.composeRawMessage({
+        from: '"Test User" <user@test.com>',
+        to: ["recipient@test.com"],
+        subject: "Test Subject",
+        text: "Hello world",
+      });
+
+      expect(Buffer.isBuffer(raw)).toBe(true);
+      const content = raw.toString();
+      expect(content).toContain("Subject: Test Subject");
+      expect(content).toContain("To: recipient@test.com");
+      expect(content).toContain("Hello world");
+    });
+
+    it("includes In-Reply-To and References headers when provided", async () => {
+      const raw = await service.composeRawMessage({
+        from: '"Test User" <user@test.com>',
+        to: ["recipient@test.com"],
+        subject: "Re: Original",
+        text: "Reply body",
+        inReplyTo: "<original@test.com>",
+        references: ["<root@test.com>", "<original@test.com>"],
+      });
+
+      const content = raw.toString();
+      expect(content).toContain("In-Reply-To: <original@test.com>");
+      expect(content).toContain("References: <root@test.com> <original@test.com>");
+    });
+
+    it("includes CC header (BCC is stripped per RFC 2822)", async () => {
+      const raw = await service.composeRawMessage({
+        from: "user@test.com",
+        to: ["a@test.com"],
+        cc: ["b@test.com"],
+        bcc: ["c@test.com"],
+        subject: "Test",
+        text: "Hello",
+      });
+
+      const content = raw.toString();
+      expect(content).toContain("Cc: b@test.com");
+      // BCC is intentionally omitted from message headers per RFC 2822;
+      // it is envelope-only and must not appear in the composed body.
+      expect(content).not.toContain("Bcc:");
+    });
+  });
+
+  describe("sendRawMessage", () => {
+    it("sends a pre-composed raw message via SMTP", async () => {
+      mockSendMail.mockResolvedValueOnce({
+        messageId: "<raw-1@test.com>",
+        accepted: ["recipient@test.com"],
+        rejected: [],
+      });
+
+      const raw = Buffer.from("Subject: Test\r\n\r\nHello");
+      const result = await service.sendRawMessage(raw, {
+        from: "user@test.com",
+        to: ["recipient@test.com"],
+      });
+
+      expect(result.messageId).toBe("<raw-1@test.com>");
+      expect(mockSendMail).toHaveBeenCalledWith({
+        envelope: { from: "user@test.com", to: ["recipient@test.com"] },
+        raw,
+      });
+    });
+  });
 });

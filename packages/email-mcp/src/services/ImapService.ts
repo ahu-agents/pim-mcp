@@ -16,6 +16,8 @@ export interface EmailSummary {
 
 export interface EmailFull extends EmailSummary {
   cc?: Array<{ name?: string; address: string }>;
+  inReplyTo: string | null;
+  references: string[];
   textBody?: string;
   htmlBody?: string;
   markdownBody?: string;
@@ -197,6 +199,12 @@ export class ImapService {
         return {
           uid,
           messageId: parsed.messageId || "",
+          inReplyTo: parsed.inReplyTo || null,
+          references: parsed.references
+            ? Array.isArray(parsed.references)
+              ? parsed.references
+              : [parsed.references]
+            : [],
           subject: parsed.subject || "",
           from: parsed.from?.value?.[0]
             ? {
@@ -364,6 +372,82 @@ export class ImapService {
           size: meta.expectedSize || Buffer.concat(chunks).length,
           content: Buffer.concat(chunks),
         };
+      } finally {
+        lock.release();
+      }
+    } catch (error) {
+      if (error instanceof EmailError) throw error;
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      await client.logout().catch(() => {});
+    }
+  }
+
+  private static FALLBACK_NAMES: Record<string, string[]> = {
+    "\\Sent": ["Sent", "Sent Messages", "Sent Items", "INBOX.Sent"],
+    "\\Drafts": ["Drafts", "Draft", "INBOX.Drafts"],
+  };
+
+  async getSpecialUseFolder(flag: string): Promise<string> {
+    const client = this.createClient();
+    try {
+      await client.connect();
+      const mailboxes = await client.list();
+
+      // Try special-use flag first
+      const byFlag = mailboxes.find((mb) => mb.specialUse === flag);
+      if (byFlag) return byFlag.path;
+
+      // Fallback to common names
+      const fallbacks = ImapService.FALLBACK_NAMES[flag] || [];
+      const paths = new Set(mailboxes.map((mb) => mb.path));
+      for (const name of fallbacks) {
+        if (paths.has(name)) return name;
+      }
+
+      throw new EmailError(
+        `FOLDER_NOT_FOUND: No folder found for ${flag}`,
+        ErrorCode.FOLDER_NOT_FOUND,
+      );
+    } catch (error) {
+      if (error instanceof EmailError) throw error;
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      await client.logout().catch(() => {});
+    }
+  }
+
+  async appendMessage(
+    folder: string,
+    rawSource: Buffer,
+    flags: string[],
+  ): Promise<{ uid: number }> {
+    const client = this.createClient();
+    try {
+      await client.connect();
+      const result = await (client as any).append(folder, rawSource, flags);
+      // ImapFlow returns { uid } when UIDPLUS is supported, false otherwise
+      return { uid: result && typeof result === "object" && "uid" in result ? result.uid : 0 };
+    } catch (error) {
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      await client.logout().catch(() => {});
+    }
+  }
+
+  async fetchRawSource(folder: string, uid: number): Promise<Buffer> {
+    const client = this.createClient();
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const fetchResult = await client.fetchOne(String(uid), { source: true }, { uid: true });
+        if (!fetchResult || !fetchResult.source) {
+          throw new EmailError(`Email UID ${uid} not found`, ErrorCode.EMAIL_NOT_FOUND, uid);
+        }
+        return Buffer.isBuffer(fetchResult.source)
+          ? fetchResult.source
+          : Buffer.from(fetchResult.source);
       } finally {
         lock.release();
       }

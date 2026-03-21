@@ -54,4 +54,15 @@ describe("loadEmailConfig", () => {
     vi.stubEnv("SMTP_PASS", "");
     expect(() => loadEmailConfig()).toThrow("Config validation failed");
   });
+
+  it("reads SMTP_AUTO_SENT as autoSent boolean", () => {
+    vi.stubEnv("SMTP_AUTO_SENT", "true");
+    const config = loadEmailConfig();
+    expect(config.autoSent).toBe(true);
+  });
+
+  it("defaults autoSent to false when SMTP_AUTO_SENT is not set", () => {
+    const config = loadEmailConfig();
+    expect(config.autoSent).toBe(false);
+  });
 });

@@ -14,6 +14,7 @@ const mockMailboxCreate = vi.fn();
 const mockDownload = vi.fn();
 const mockStatus = vi.fn();
 const mockGetMailboxLock = vi.fn();
+const mockAppend = vi.fn();
 const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockLogout = vi.fn().mockResolvedValue(undefined);
 
@@ -35,6 +36,7 @@ vi.mock("imapflow", () => ({
     mailboxCreate: mockMailboxCreate,
     download: mockDownload,
     status: mockStatus,
+    append: mockAppend,
     mailbox: { exists: 100 },
   })),
 }));
@@ -663,6 +665,43 @@ describe("ImapService", () => {
       expect(email.attachments).toHaveLength(1);
       expect(email.attachments[0].filename).toBe("doc.pdf");
     });
+
+    it("returns inReplyTo and references from parsed email", async () => {
+      const { simpleParser } = await import("mailparser");
+      vi.mocked(simpleParser).mockResolvedValueOnce({
+        messageId: "<msg-1@test.com>",
+        subject: "Re: Original",
+        from: { value: [{ address: "sender@test.com", name: "Sender" }] },
+        to: { value: [{ address: "recipient@test.com", name: "Recipient" }] },
+        cc: null,
+        date: new Date("2026-03-04T12:00:00Z"),
+        text: "Reply body",
+        html: null,
+        attachments: [],
+        inReplyTo: "<original@test.com>",
+        references: ["<root@test.com>", "<original@test.com>"],
+      } as any);
+
+      mockFetchOne.mockResolvedValueOnce({
+        source: Buffer.from("raw email"),
+        uid: 42,
+      });
+
+      const email = await service.fetchEmail("INBOX", 42);
+      expect(email.inReplyTo).toBe("<original@test.com>");
+      expect(email.references).toEqual(["<root@test.com>", "<original@test.com>"]);
+    });
+
+    it("returns null inReplyTo and empty references for non-reply emails", async () => {
+      mockFetchOne.mockResolvedValueOnce({
+        source: Buffer.from("raw email"),
+        uid: 10,
+      });
+
+      const email = await service.fetchEmail("INBOX", 10);
+      expect(email.inReplyTo).toBeNull();
+      expect(email.references).toEqual([]);
+    });
   });
 
   describe("moveEmails", () => {
@@ -768,6 +807,106 @@ describe("ImapService", () => {
 
       await service.getFolderStatus("INBOX");
       expect(mockGetMailboxLock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("appendMessage", () => {
+    it("appends a raw message to a folder with flags", async () => {
+      mockAppend.mockResolvedValueOnce({ uid: 123 });
+
+      const raw = Buffer.from("Subject: Test\r\n\r\nHello");
+      const result = await service.appendMessage("Sent", raw, ["\\Seen"]);
+
+      expect(result).toEqual({ uid: 123 });
+      expect(mockAppend).toHaveBeenCalledWith("Sent", raw, ["\\Seen"]);
+    });
+
+    it("returns uid 0 when server does not support UIDPLUS", async () => {
+      mockAppend.mockResolvedValueOnce(false);
+
+      const raw = Buffer.from("Subject: Test\r\n\r\nHello");
+      const result = await service.appendMessage("Drafts", raw, ["\\Draft", "\\Seen"]);
+
+      expect(result).toEqual({ uid: 0 });
+    });
+  });
+
+  describe("fetchRawSource", () => {
+    it("fetches raw RFC 822 source as Buffer", async () => {
+      const rawContent = Buffer.from("Subject: Test\r\n\r\nHello world");
+      mockFetchOne.mockResolvedValueOnce({
+        source: rawContent,
+        uid: 42,
+      });
+
+      const result = await service.fetchRawSource("INBOX", 42);
+      expect(result).toEqual(rawContent);
+    });
+
+    it("throws EMAIL_NOT_FOUND for missing UID", async () => {
+      mockFetchOne.mockResolvedValueOnce(null);
+
+      await expect(service.fetchRawSource("INBOX", 999)).rejects.toThrow("not found");
+    });
+  });
+
+  describe("getSpecialUseFolder", () => {
+    it("finds Sent folder by special-use flag", async () => {
+      mockList.mockResolvedValueOnce([
+        { path: "INBOX", specialUse: "\\Inbox", delimiter: "/" },
+        { path: "Sent Messages", specialUse: "\\Sent", delimiter: "/" },
+        { path: "Trash", specialUse: "\\Trash", delimiter: "/" },
+      ]);
+
+      const folder = await service.getSpecialUseFolder("\\Sent");
+      expect(folder).toBe("Sent Messages");
+    });
+
+    it("finds Drafts folder by special-use flag", async () => {
+      mockList.mockResolvedValueOnce([
+        { path: "INBOX", specialUse: "\\Inbox", delimiter: "/" },
+        { path: "Drafts", specialUse: "\\Drafts", delimiter: "/" },
+      ]);
+
+      const folder = await service.getSpecialUseFolder("\\Drafts");
+      expect(folder).toBe("Drafts");
+    });
+
+    it("falls back to common names when no special-use flag for Sent", async () => {
+      mockList.mockResolvedValueOnce([
+        { path: "INBOX", specialUse: "\\Inbox", delimiter: "/" },
+        { path: "Sent", delimiter: "/" },
+        { path: "Trash", delimiter: "/" },
+      ]);
+
+      const folder = await service.getSpecialUseFolder("\\Sent");
+      expect(folder).toBe("Sent");
+    });
+
+    it("falls back to 'Sent Items' when 'Sent' not found", async () => {
+      mockList.mockResolvedValueOnce([
+        { path: "INBOX", delimiter: "/" },
+        { path: "Sent Items", delimiter: "/" },
+      ]);
+
+      const folder = await service.getSpecialUseFolder("\\Sent");
+      expect(folder).toBe("Sent Items");
+    });
+
+    it("falls back to 'INBOX.Drafts' for Drafts", async () => {
+      mockList.mockResolvedValueOnce([
+        { path: "INBOX", delimiter: "." },
+        { path: "INBOX.Drafts", delimiter: "." },
+      ]);
+
+      const folder = await service.getSpecialUseFolder("\\Drafts");
+      expect(folder).toBe("INBOX.Drafts");
+    });
+
+    it("throws FOLDER_NOT_FOUND when no match", async () => {
+      mockList.mockResolvedValueOnce([{ path: "INBOX", delimiter: "/" }]);
+
+      await expect(service.getSpecialUseFolder("\\Sent")).rejects.toThrow("FOLDER_NOT_FOUND");
     });
   });
 });

@@ -1,5 +1,6 @@
 import { toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { simpleParser } from "mailparser";
 import { htmlToMarkdown } from "../htmlToMarkdown.js";
 import type { SearchParams } from "../search.js";
 import type { ImapService } from "../services/ImapService.js";
@@ -122,7 +123,7 @@ export const EMAIL_TOOLS: Tool[] = [
   {
     name: "send_email",
     description:
-      "Compose and send an email via SMTP. Supports to/cc/bcc, text and HTML body, and file attachments.",
+      "Compose and send an email, or save it as a draft. Supports replies with automatic threading — when replyToUid is provided, the tool fetches the original email and sets correct In-Reply-To/References headers and Re: subject prefix automatically. Set saveToDrafts to true to save to the Drafts folder instead of sending. Sent emails are automatically copied to the Sent folder.",
     inputSchema: {
       type: "object",
       properties: {
@@ -143,7 +144,8 @@ export const EMAIL_TOOLS: Tool[] = [
         },
         subject: {
           type: "string",
-          description: "Email subject line.",
+          description:
+            "Email subject line. Required for new emails. When replyToUid is set and subject is omitted, automatically uses 'Re: <original subject>'. When provided explicitly, used as-is.",
         },
         text: {
           type: "string",
@@ -172,8 +174,23 @@ export const EMAIL_TOOLS: Tool[] = [
           },
           description: "File attachments.",
         },
+        replyToUid: {
+          type: "number",
+          description:
+            "UID of the email to reply to. When set, the tool automatically fetches the original email's Message-ID and References chain, sets In-Reply-To and References headers, and prepends 'Re:' to the subject if not already present. The reply will appear threaded in all email clients.",
+        },
+        replyToFolder: {
+          type: "string",
+          description:
+            "IMAP folder containing the email referenced by replyToUid. Defaults to INBOX.",
+        },
+        saveToDrafts: {
+          type: "boolean",
+          description:
+            "When true, saves the composed email to the Drafts folder instead of sending it. The draft will appear in any email client and can be edited there. Defaults to false.",
+        },
       },
-      required: ["to", "subject"],
+      required: ["to"],
     },
   },
   {
@@ -331,6 +348,25 @@ export const EMAIL_TOOLS: Tool[] = [
       },
     },
   },
+  {
+    name: "send_draft",
+    description:
+      "Send an existing email draft from the Drafts folder. Fetches the draft's raw RFC 822 source, sends it via SMTP, copies it to the Sent folder, and removes it from Drafts. The draft must already exist — use send_email with saveToDrafts: true to create one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        uid: {
+          type: "number",
+          description: "UID of the draft email in the Drafts folder.",
+        },
+        folder: {
+          type: "string",
+          description: "IMAP folder containing the draft. Defaults to the server's Drafts folder.",
+        },
+      },
+      required: ["uid"],
+    },
+  },
 ];
 
 export async function handleEmailTool(
@@ -402,16 +438,92 @@ export async function handleEmailTool(
       }
 
       case "send_email": {
-        const result = await smtpService.sendEmail({
-          to: args.to as string[],
-          cc: args.cc as string[] | undefined,
-          bcc: args.bcc as string[] | undefined,
-          subject: args.subject as string,
-          text: args.text as string | undefined,
-          html: args.html as string | undefined,
-          attachments: args.attachments as any[] | undefined,
+        const to = args.to as string[];
+        const cc = args.cc as string[] | undefined;
+        const bcc = args.bcc as string[] | undefined;
+        const text = args.text as string | undefined;
+        const html = args.html as string | undefined;
+        const attachments = args.attachments as any[] | undefined;
+        const replyToUid = args.replyToUid as number | undefined;
+        const replyToFolder = (args.replyToFolder as string) || "INBOX";
+        const saveToDrafts = (args.saveToDrafts as boolean) || false;
+        let subject = args.subject as string | undefined;
+
+        // Validation: subject required when not replying
+        if (!subject && !replyToUid) {
+          return error("subject is required when not replying to an existing email");
+        }
+
+        // Threading: fetch original email for reply context
+        let inReplyTo: string | undefined;
+        let references: string[] | undefined;
+        if (replyToUid) {
+          const original = await imapService.fetchEmail(replyToFolder, replyToUid);
+          inReplyTo = original.messageId;
+          references = [...(original.references || [])];
+          if (original.messageId && !references.includes(original.messageId)) {
+            references.push(original.messageId);
+          }
+          if (!subject) {
+            const origSubject = original.subject || "";
+            subject = origSubject.startsWith("Re:") ? origSubject : `Re: ${origSubject}`;
+          }
+        }
+
+        // Compose RFC 822 message
+        const from = smtpService.config.fromName
+          ? `"${smtpService.config.fromName}" <${smtpService.config.smtp.user}>`
+          : smtpService.config.smtp.user;
+
+        const rawMessage = await smtpService.composeRawMessage({
+          from,
+          to,
+          cc,
+          bcc,
+          subject: subject!,
+          text,
+          html,
+          attachments,
+          inReplyTo,
+          references,
         });
-        return ok(JSON.stringify({ status: "sent", ...result }));
+
+        if (saveToDrafts) {
+          // Draft mode: APPEND to Drafts folder
+          const draftsFolder = await imapService.getSpecialUseFolder("\\Drafts");
+          const appendResult = await imapService.appendMessage(draftsFolder, rawMessage, [
+            "\\Draft",
+            "\\Seen",
+          ]);
+          return ok(
+            JSON.stringify({ status: "draft", uid: appendResult.uid, folder: draftsFolder }),
+          );
+        }
+
+        // Send mode: SMTP send + APPEND to Sent
+        const envelope = {
+          from: smtpService.config.smtp.user,
+          to: [...to, ...(cc || []), ...(bcc || [])],
+        };
+        const sendResult = await smtpService.sendRawMessage(rawMessage, envelope);
+
+        let sentFolderPath = "Sent";
+        if (!smtpService.config.autoSent) {
+          try {
+            sentFolderPath = await imapService.getSpecialUseFolder("\\Sent");
+            await imapService.appendMessage(sentFolderPath, rawMessage, ["\\Seen"]);
+          } catch (appendError) {
+            console.error("[email-mcp] Failed to copy to Sent folder:", appendError);
+          }
+        }
+
+        return ok(
+          JSON.stringify({
+            status: "sent",
+            messageId: sendResult.messageId,
+            folder: sentFolderPath,
+          }),
+        );
       }
 
       case "move_email": {
@@ -475,6 +587,64 @@ export async function handleEmailTool(
       case "get_folder_status": {
         const status = await imapService.getFolderStatus(folder);
         return ok(JSON.stringify(status));
+      }
+
+      case "send_draft": {
+        const uid = args.uid as number;
+        const draftFolder =
+          (args.folder as string) || (await imapService.getSpecialUseFolder("\\Drafts"));
+
+        // Fetch raw source
+        const rawSource = await imapService.fetchRawSource(draftFolder, uid);
+
+        // Parse headers for SMTP envelope
+        const parsed = await simpleParser(rawSource);
+        const toAddrs = (Array.isArray(parsed.to) ? parsed.to : parsed.to ? [parsed.to] : [])
+          .flatMap((addr) => addr.value)
+          .map((a) => a.address)
+          .filter((a): a is string => !!a);
+        const ccAddrs = (Array.isArray(parsed.cc) ? parsed.cc : parsed.cc ? [parsed.cc] : [])
+          .flatMap((addr) => addr.value)
+          .map((a) => a.address)
+          .filter((a): a is string => !!a);
+        const bccAddrs = (Array.isArray(parsed.bcc) ? parsed.bcc : parsed.bcc ? [parsed.bcc] : [])
+          .flatMap((addr) => addr.value)
+          .map((a) => a.address)
+          .filter((a): a is string => !!a);
+
+        const allRecipients = [...toAddrs, ...ccAddrs, ...bccAddrs];
+        if (allRecipients.length === 0) {
+          return error("Draft has no recipients — cannot send");
+        }
+
+        // Send via SMTP
+        const envelope = {
+          from: smtpService.config.smtp.user,
+          to: allRecipients,
+        };
+        const sendResult = await smtpService.sendRawMessage(rawSource, envelope);
+
+        // Copy to Sent
+        let sentFolderPath = "Sent";
+        if (!smtpService.config.autoSent) {
+          try {
+            sentFolderPath = await imapService.getSpecialUseFolder("\\Sent");
+            await imapService.appendMessage(sentFolderPath, rawSource, ["\\Seen"]);
+          } catch (appendError) {
+            console.error("[email-mcp] Failed to copy to Sent folder:", appendError);
+          }
+        }
+
+        // Delete draft (permanently — not move to Trash)
+        await imapService.deleteEmails(draftFolder, [uid], true);
+
+        return ok(
+          JSON.stringify({
+            status: "sent",
+            messageId: sendResult.messageId,
+            folder: sentFolderPath,
+          }),
+        );
       }
 
       default:

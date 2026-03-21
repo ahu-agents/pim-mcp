@@ -120,6 +120,7 @@ export interface EmailConfig {
     secure: boolean;
   };
   fromName?: string;
+  autoSent?: boolean;
 }
 
 const EmailEnvSchema = v.object({
@@ -162,6 +163,7 @@ export function loadEmailConfig(): EmailConfig {
         secure: process.env.SMTP_SECURE !== "false",
       },
       fromName: process.env.SMTP_FROM_NAME || undefined,
+      autoSent: process.env.SMTP_AUTO_SENT === "true",
     };
   } catch (error) {
     if (v.isValiError(error)) {
