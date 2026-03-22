@@ -42,6 +42,163 @@ SUMMARY:Company Holiday
 END:VEVENT
 END:VCALENDAR`;
 
+const ALARM_RELATIVE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-rel@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting with Alarm",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT15M",
+  "DESCRIPTION:Reminder",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_HOURS_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-hours@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT2H",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_DAYS_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-days@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-P1D",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_COMBINED_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-combined@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT1H30M",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_ABSOLUTE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-abs@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER;VALUE=DATE-TIME:20260310T133000Z",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const CATEGORIES_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:cat-1@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Tagged Event",
+  "CATEGORIES:Meeting,Project-X",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const CATEGORIES_SINGLE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:cat-single@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Single Cat",
+  "CATEGORIES:Work",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const GEO_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:geo-1@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Located Event",
+  "GEO:37.386013;-122.082932",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const CUTYPE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:cutype-1@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "ATTENDEE;CN=Alice;CUTYPE=INDIVIDUAL:mailto:alice@example.com",
+  "ATTENDEE;CN=Room A;CUTYPE=ROOM:mailto:rooma@example.com",
+  "ATTENDEE;CN=Projector;CUTYPE=RESOURCE:mailto:projector@example.com",
+  "ATTENDEE;CN=Engineering;CUTYPE=GROUP:mailto:eng@example.com",
+  "ATTENDEE;CN=Bob:mailto:bob@example.com",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_MULTIPLE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-multi@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT15M",
+  "END:VALARM",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT1H",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
 describe("parseIcsEvents", () => {
   it("parses a single VEVENT from iCalendar string", () => {
     const events = parseIcsEvents(SAMPLE_ICS);
@@ -176,6 +333,119 @@ END:VCALENDAR`;
     expect(events[0].created).toBeNull();
     expect(events[0].last_modified).toBeNull();
     expect(events[0].url).toBeNull();
+  });
+
+  it("parses VALARM with relative trigger (minutes)", () => {
+    const events = parseIcsEvents(ALARM_RELATIVE_ICS);
+    expect(events[0].alarms).toHaveLength(1);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -900,
+      trigger_human: "15 minutes before",
+    });
+  });
+
+  it("parses VALARM with relative trigger (hours)", () => {
+    const events = parseIcsEvents(ALARM_HOURS_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -7200,
+      trigger_human: "2 hours before",
+    });
+  });
+
+  it("parses VALARM with relative trigger (days)", () => {
+    const events = parseIcsEvents(ALARM_DAYS_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -86400,
+      trigger_human: "1 day before",
+    });
+  });
+
+  it("parses VALARM with combined duration", () => {
+    const events = parseIcsEvents(ALARM_COMBINED_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -5400,
+      trigger_human: "1 hour, 30 minutes before",
+    });
+  });
+
+  it("parses VALARM with absolute trigger", () => {
+    const events = parseIcsEvents(ALARM_ABSOLUTE_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "absolute",
+      trigger: "2026-03-10T13:30:00.000Z",
+    });
+    expect(events[0].alarms[0].trigger_human).toContain("2026");
+  });
+
+  it("parses multiple VALARMs on one event", () => {
+    const events = parseIcsEvents(ALARM_MULTIPLE_ICS);
+    expect(events[0].alarms).toHaveLength(2);
+    expect(events[0].alarms[0].trigger).toBe(-900);
+    expect(events[0].alarms[1].trigger).toBe(-3600);
+  });
+
+  it("returns empty alarms array when no VALARM present", () => {
+    const events = parseIcsEvents(SAMPLE_ICS);
+    expect(events[0].alarms).toEqual([]);
+  });
+
+  it("parses CATEGORIES with multiple values", () => {
+    const events = parseIcsEvents(CATEGORIES_ICS);
+    expect(events[0].categories).toEqual(["Meeting", "Project-X"]);
+  });
+
+  it("parses CATEGORIES with single value", () => {
+    const events = parseIcsEvents(CATEGORIES_SINGLE_ICS);
+    expect(events[0].categories).toEqual(["Work"]);
+  });
+
+  it("returns empty categories array when none present", () => {
+    const events = parseIcsEvents(SAMPLE_ICS);
+    expect(events[0].categories).toEqual([]);
+  });
+
+  it("parses GEO property", () => {
+    const events = parseIcsEvents(GEO_ICS);
+    expect(events[0].geo).toEqual({
+      latitude: 37.386013,
+      longitude: -122.082932,
+    });
+  });
+
+  it("returns null geo when not present", () => {
+    const events = parseIcsEvents(SAMPLE_ICS);
+    expect(events[0].geo).toBeNull();
+  });
+
+  it("returns null geo when GEO has malformed values", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:geo-bad@example.com",
+      "DTSTART:20260310T140000Z",
+      "DTEND:20260310T150000Z",
+      "SUMMARY:Bad Geo",
+      "GEO:;",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(ics);
+    expect(events[0].geo).toBeNull();
+  });
+
+  it("parses CUTYPE on attendees", () => {
+    const events = parseIcsEvents(CUTYPE_ICS);
+    expect(events[0].attendees).toHaveLength(5);
+    expect(events[0].attendees[0].type).toBe("person");
+    expect(events[0].attendees[1].type).toBe("room");
+    expect(events[0].attendees[2].type).toBe("resource");
+    expect(events[0].attendees[3].type).toBe("group");
+    expect(events[0].attendees[4].type).toBe("unknown");
   });
 });
 
@@ -312,6 +582,78 @@ describe("generateEventIcs", () => {
       end: "2026-03-15T11:00:00Z",
     });
     expect(ics).toMatch(/UID:.+/);
+  });
+
+  it("generates ICS with relative alarm", () => {
+    const ics = generateEventIcs({
+      title: "Alarm Test",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "relative", trigger: -900 }],
+    });
+    expect(ics).toContain("BEGIN:VALARM");
+    expect(ics).toContain("END:VALARM");
+    expect(ics).toContain("TRIGGER:-PT15M");
+  });
+
+  it("generates ICS with absolute alarm", () => {
+    const ics = generateEventIcs({
+      title: "Alarm Test",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "absolute", trigger: "2026-03-10T13:30:00Z" }],
+    });
+    expect(ics).toContain("BEGIN:VALARM");
+    expect(ics).toContain("20260310T133000Z");
+  });
+
+  it("generates ICS with multiple alarms", () => {
+    const ics = generateEventIcs({
+      title: "Alarm Test",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [
+        { type: "relative", trigger: -900 },
+        { type: "relative", trigger: -3600 },
+      ],
+    });
+    const alarmCount = (ics.match(/BEGIN:VALARM/g) || []).length;
+    expect(alarmCount).toBe(2);
+  });
+
+  it("generates ICS with categories", () => {
+    const ics = generateEventIcs({
+      title: "Tagged Event",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      categories: ["Meeting", "Project-X"],
+    });
+    expect(ics).toContain("CATEGORIES:Meeting,Project-X");
+  });
+
+  it("generates ICS with alarms and categories together", () => {
+    const ics = generateEventIcs({
+      title: "Full Event",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "relative", trigger: -600 }],
+      categories: ["Work"],
+    });
+    expect(ics).toContain("BEGIN:VALARM");
+    expect(ics).toContain("CATEGORIES:Work");
+  });
+
+  it("alarm round-trip: generate then parse preserves alarms", () => {
+    const ics = generateEventIcs({
+      title: "Round Trip",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "relative", trigger: -900 }],
+    });
+    const parsed = parseIcsEvents(ics);
+    expect(parsed[0].alarms).toHaveLength(1);
+    expect(parsed[0].alarms[0].type).toBe("relative");
+    expect(parsed[0].alarms[0].trigger).toBe(-900);
   });
 
   describe("timezone in generated ICS", () => {

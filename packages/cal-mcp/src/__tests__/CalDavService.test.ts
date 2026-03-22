@@ -23,6 +23,7 @@ vi.mock("tsdav", () => {
     createCalendarObject: vi.fn().mockResolvedValue({ ok: true }),
     updateCalendarObject: vi.fn().mockResolvedValue({ ok: true }),
     deleteCalendarObject: vi.fn().mockResolvedValue({ ok: true }),
+    propfind: vi.fn().mockResolvedValue([]),
   };
   return {
     DAVClient: vi.fn().mockImplementation(() => mockClient),
@@ -108,6 +109,48 @@ describe("CalDavService", () => {
         }),
       );
     });
+
+    it("returns read_only: false when privilege set includes write", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.propfind.mockResolvedValue([
+        {
+          props: {
+            currentUserPrivilegeSet: {
+              privilege: [{ write: {} }, { read: {} }],
+            },
+          },
+        },
+      ]);
+
+      const calendars = await service.listCalendars();
+      const workCal = calendars.find((c) => c.display_name === "Work");
+      expect(workCal?.read_only).toBe(false);
+    });
+
+    it("returns read_only: true when privilege set lacks write", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.propfind.mockResolvedValue([
+        {
+          props: {
+            currentUserPrivilegeSet: {
+              privilege: [{ read: {} }],
+            },
+          },
+        },
+      ]);
+
+      const calendars = await service.listCalendars();
+      // All calendars from this provider should be read_only
+      expect(calendars.every((c) => c.read_only)).toBe(true);
+    });
+
+    it("defaults read_only: false when propfind returns no privilege info", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.propfind.mockResolvedValue([]);
+
+      const calendars = await service.listCalendars();
+      expect(calendars[0].read_only).toBe(false);
+    });
   });
 
   describe("listEvents", () => {
@@ -169,12 +212,17 @@ describe("CalDavService", () => {
           status: "confirmed",
           availability: "busy",
           url: null,
-          attendees: [{ email: "bob@example.com", name: "Bob", status: null, role: null }],
+          attendees: [
+            { email: "bob@example.com", name: "Bob", status: null, role: null, type: "unknown" },
+          ],
           organizer: { email: "miguel@example.com", name: "Miguel" },
           recurrence_rule: null,
           is_recurring: false,
           created: null,
           last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -204,6 +252,55 @@ describe("CalDavService", () => {
 
       await expect(service.getEvent("mailbox/Work", "evt-missing")).rejects.toThrow("not found");
     });
+
+    it("getEvent returns new fields (alarms, categories, geo, attendee type)", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-full",
+          title: "Full Event",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: "Office",
+          description: "Test",
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [
+            {
+              email: "alice@example.com",
+              name: "Alice",
+              status: "accepted",
+              role: "req-participant",
+              type: "person",
+            },
+            { email: "rooma@example.com", name: "Room A", status: null, role: null, type: "room" },
+          ],
+          organizer: { email: "miguel@example.com", name: "Miguel" },
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+          alarms: [{ type: "relative", trigger: -900, trigger_human: "15 minutes before" }],
+          categories: ["Meeting", "Project-X"],
+          geo: { latitude: 37.386, longitude: -122.083 },
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-full.ics", etag: '"e1"' },
+      ]);
+
+      const event = await service.getEvent("mailbox/Work", "evt-full");
+
+      expect(event.alarms).toHaveLength(1);
+      expect(event.alarms[0].trigger).toBe(-900);
+      expect(event.categories).toEqual(["Meeting", "Project-X"]);
+      expect(event.geo).toEqual({ latitude: 37.386, longitude: -122.083 });
+      expect(event.attendees[0].type).toBe("person");
+      expect(event.attendees[1].type).toBe("room");
+    });
   });
 
   describe("createEvent", () => {
@@ -232,6 +329,9 @@ describe("CalDavService", () => {
           is_recurring: false,
           created: null,
           last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
         },
       ]);
 
@@ -294,6 +394,9 @@ describe("CalDavService", () => {
         is_recurring: false,
         created: null,
         last_modified: null,
+        alarms: [],
+        categories: [],
+        geo: null,
       };
       (parseIcsEvents as any).mockReturnValueOnce([fullEvent]);
 
@@ -361,6 +464,9 @@ describe("CalDavService", () => {
         is_recurring: false,
         created: null,
         last_modified: null,
+        alarms: [],
+        categories: [],
+        geo: null,
       };
 
       __mockClient.updateCalendarObject.mockResolvedValue({ ok: true });
@@ -763,6 +869,9 @@ describe("CalDavService", () => {
           is_recurring: false,
           created: null,
           last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -799,6 +908,9 @@ describe("CalDavService", () => {
           is_recurring: false,
           created: null,
           last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -837,6 +949,9 @@ describe("CalDavService", () => {
           is_recurring: false,
           created: null,
           last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -882,6 +997,9 @@ describe("CalDavService", () => {
           is_recurring: false,
           created: null,
           last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
