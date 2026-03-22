@@ -212,7 +212,9 @@ describe("CalDavService", () => {
           status: "confirmed",
           availability: "busy",
           url: null,
-          attendees: [{ email: "bob@example.com", name: "Bob", status: null, role: null, type: "unknown" }],
+          attendees: [
+            { email: "bob@example.com", name: "Bob", status: null, role: null, type: "unknown" },
+          ],
           organizer: { email: "miguel@example.com", name: "Miguel" },
           recurrence_rule: null,
           is_recurring: false,
@@ -267,7 +269,13 @@ describe("CalDavService", () => {
           availability: "busy",
           url: null,
           attendees: [
-            { email: "alice@example.com", name: "Alice", status: "accepted", role: "req-participant", type: "person" },
+            {
+              email: "alice@example.com",
+              name: "Alice",
+              status: "accepted",
+              role: "req-participant",
+              type: "person",
+            },
             { email: "rooma@example.com", name: "Room A", status: null, role: null, type: "room" },
           ],
           organizer: { email: "miguel@example.com", name: "Miguel" },

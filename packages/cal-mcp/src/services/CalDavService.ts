@@ -168,10 +168,7 @@ export class CalDavService {
     );
   }
 
-  private async fetchPrivileges(
-    client: DAVClient,
-    calendarUrl: string,
-  ): Promise<boolean> {
+  private async fetchPrivileges(client: DAVClient, calendarUrl: string): Promise<boolean> {
     try {
       const responses = await (client as any).propfind({
         url: calendarUrl,
