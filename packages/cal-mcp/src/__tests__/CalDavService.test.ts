@@ -23,6 +23,7 @@ vi.mock("tsdav", () => {
     createCalendarObject: vi.fn().mockResolvedValue({ ok: true }),
     updateCalendarObject: vi.fn().mockResolvedValue({ ok: true }),
     deleteCalendarObject: vi.fn().mockResolvedValue({ ok: true }),
+    propfind: vi.fn().mockResolvedValue([]),
   };
   return {
     DAVClient: vi.fn().mockImplementation(() => mockClient),
@@ -107,6 +108,48 @@ describe("CalDavService", () => {
           serverUrl: "https://cloud.example.com/remote.php/dav/calendars/miguel/",
         }),
       );
+    });
+
+    it("returns read_only: false when privilege set includes write", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.propfind.mockResolvedValue([
+        {
+          props: {
+            currentUserPrivilegeSet: {
+              privilege: [{ write: {} }, { read: {} }],
+            },
+          },
+        },
+      ]);
+
+      const calendars = await service.listCalendars();
+      const workCal = calendars.find((c) => c.display_name === "Work");
+      expect(workCal?.read_only).toBe(false);
+    });
+
+    it("returns read_only: true when privilege set lacks write", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.propfind.mockResolvedValue([
+        {
+          props: {
+            currentUserPrivilegeSet: {
+              privilege: [{ read: {} }],
+            },
+          },
+        },
+      ]);
+
+      const calendars = await service.listCalendars();
+      // All calendars from this provider should be read_only
+      expect(calendars.every((c) => c.read_only)).toBe(true);
+    });
+
+    it("defaults read_only: false when propfind returns no privilege info", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      __mockClient.propfind.mockResolvedValue([]);
+
+      const calendars = await service.listCalendars();
+      expect(calendars[0].read_only).toBe(false);
     });
   });
 

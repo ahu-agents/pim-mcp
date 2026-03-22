@@ -162,6 +162,35 @@ export class CalDavService {
     throw new CalendarError(`Event "${uid}" not found`, ErrorCode.EVENT_NOT_FOUND, uid);
   }
 
+  private hasWritePrivilege(privileges: Array<Record<string, unknown>>): boolean {
+    return privileges.some(
+      (p) => p.write !== undefined || p["write-content"] !== undefined || p.bind !== undefined,
+    );
+  }
+
+  private async fetchPrivileges(
+    client: DAVClient,
+    calendarUrl: string,
+  ): Promise<boolean> {
+    try {
+      const responses = await (client as any).propfind({
+        url: calendarUrl,
+        props: {
+          "d:current-user-privilege-set": {},
+        },
+        depth: "0",
+      });
+      const privSet = responses?.[0]?.props?.currentUserPrivilegeSet;
+      if (!privSet) return true; // Default to writable
+      const privileges = privSet.privilege;
+      if (!privileges) return true;
+      const privArray = Array.isArray(privileges) ? privileges : [privileges];
+      return this.hasWritePrivilege(privArray);
+    } catch {
+      return true; // Default to writable on error
+    }
+  }
+
   async listCalendars(): Promise<CalendarInfo[]> {
     const allCalendars: CalendarInfo[] = [];
 
@@ -172,12 +201,13 @@ export class CalDavService {
         this.calendarsCache.set(providerId, calendars);
         for (const cal of calendars) {
           const displayName = (typeof cal.displayName === "string" ? cal.displayName : "") || "";
+          const canWrite = await this.fetchPrivileges(client, cal.url);
           allCalendars.push({
             calendar_id: `${providerId}/${displayName}`,
             display_name: displayName,
             color: (cal as any).calendarColor ?? null,
             source: providerId,
-            read_only: false,
+            read_only: !canWrite,
             url: cal.url,
             ctag: cal.ctag,
           });
