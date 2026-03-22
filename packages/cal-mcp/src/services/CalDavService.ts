@@ -8,7 +8,7 @@ import {
   toPimError,
 } from "@miguelarios/pim-core";
 import { DAVClient } from "tsdav";
-import { type ParsedEvent, type TimeRange, parseIcsEvents } from "../ical.js";
+import { type ParsedAlarm, type ParsedEvent, type TimeRange, parseIcsEvents } from "../ical.js";
 
 export interface CalendarInfo {
   calendar_id: string;
@@ -41,11 +41,15 @@ export interface EventFull extends EventSummary {
     email: string;
     status: string | null;
     role: string | null;
+    type: string;
   }>;
   organizer: { name: string | null; email: string } | null;
   recurrence_rule: string | null;
   created: string | null;
   last_modified: string | null;
+  alarms: ParsedAlarm[];
+  categories: string[];
+  geo: { latitude: number; longitude: number } | null;
 }
 
 export interface FreeSlot {
@@ -238,25 +242,7 @@ export class CalDavService {
         throw new CalendarError(`Event "${uid}" not found`, ErrorCode.EVENT_NOT_FOUND, uid);
       }
 
-      return {
-        uid: event.uid,
-        calendar_id: calendarId,
-        title: event.title,
-        start: event.start,
-        end: event.end,
-        all_day: event.all_day,
-        location: event.location,
-        status: event.status,
-        is_recurring: event.is_recurring,
-        description: event.description,
-        url: event.url,
-        availability: event.availability,
-        attendees: event.attendees,
-        organizer: event.organizer,
-        recurrence_rule: event.recurrence_rule,
-        created: event.created,
-        last_modified: event.last_modified,
-      };
+      return this.toEventFull(event, calendarId);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
@@ -280,25 +266,7 @@ export class CalDavService {
       }
 
       return {
-        event: {
-          uid: event.uid,
-          calendar_id: calendarId,
-          title: event.title,
-          start: event.start,
-          end: event.end,
-          all_day: event.all_day,
-          location: event.location,
-          status: event.status,
-          is_recurring: event.is_recurring,
-          description: event.description,
-          url: event.url,
-          availability: event.availability,
-          attendees: event.attendees,
-          organizer: event.organizer,
-          recurrence_rule: event.recurrence_rule,
-          created: event.created,
-          last_modified: event.last_modified,
-        },
+        event: this.toEventFull(event, calendarId),
         meta: { url: obj.url, etag: obj.etag },
       };
     } catch (error) {
@@ -332,25 +300,7 @@ export class CalDavService {
         throw new CalendarError(`Event "${uid}" not found in ICS`, ErrorCode.EVENT_NOT_FOUND, uid);
       }
 
-      return {
-        uid: event.uid,
-        calendar_id: calendarId,
-        title: event.title,
-        start: event.start,
-        end: event.end,
-        all_day: event.all_day,
-        location: event.location,
-        status: event.status,
-        is_recurring: event.is_recurring,
-        description: event.description,
-        url: event.url,
-        availability: event.availability,
-        attendees: event.attendees,
-        organizer: event.organizer,
-        recurrence_rule: event.recurrence_rule,
-        created: event.created,
-        last_modified: event.last_modified,
-      };
+      return this.toEventFull(event, calendarId);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       this.calendarsCache.delete(account.id);
@@ -400,25 +350,7 @@ export class CalDavService {
         throw new CalendarError(`Event "${uid}" not found in ICS`, ErrorCode.EVENT_NOT_FOUND, uid);
       }
 
-      return {
-        uid: event.uid,
-        calendar_id: calendarId,
-        title: event.title,
-        start: event.start,
-        end: event.end,
-        all_day: event.all_day,
-        location: event.location,
-        status: event.status,
-        is_recurring: event.is_recurring,
-        description: event.description,
-        url: event.url,
-        availability: event.availability,
-        attendees: event.attendees,
-        organizer: event.organizer,
-        recurrence_rule: event.recurrence_rule,
-        created: event.created,
-        last_modified: event.last_modified,
-      };
+      return this.toEventFull(event, calendarId);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       this.calendarsCache.delete(account.id);
@@ -656,6 +588,31 @@ export class CalDavService {
     }
 
     return this.formatSlots(freeSlots);
+  }
+
+  private toEventFull(event: ParsedEvent, calendarId: string): EventFull {
+    return {
+      uid: event.uid,
+      calendar_id: calendarId,
+      title: event.title,
+      start: event.start,
+      end: event.end,
+      all_day: event.all_day,
+      location: event.location,
+      status: event.status,
+      is_recurring: event.is_recurring,
+      description: event.description,
+      url: event.url,
+      availability: event.availability,
+      attendees: event.attendees,
+      organizer: event.organizer,
+      recurrence_rule: event.recurrence_rule,
+      created: event.created,
+      last_modified: event.last_modified,
+      alarms: event.alarms,
+      categories: event.categories,
+      geo: event.geo,
+    };
   }
 
   private formatSlots(slots: FreeSlot[]): FreeSlot[] {
