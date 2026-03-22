@@ -24,7 +24,10 @@ export interface ParsedEvent {
     email: string;
     status: string | null;
     role: string | null;
+    type: string;
   }>;
+  categories: string[];
+  geo: { latitude: number; longitude: number } | null;
   organizer: { name: string | null; email: string } | null;
   recurrence_rule: string | null;
   created: string | null;
@@ -49,6 +52,13 @@ export interface EventCreateProps {
   uid?: string;
   timezone?: string;
 }
+
+const CUTYPE_MAP: Record<string, string> = {
+  INDIVIDUAL: "person",
+  ROOM: "room",
+  RESOURCE: "resource",
+  GROUP: "group",
+};
 
 function parseDurationToSeconds(duration: string): number {
   const negative = duration.startsWith("-");
@@ -131,6 +141,7 @@ export function parseIcsEvents(
       email: string;
       status: string | null;
       role: string | null;
+      type: string;
     }> = [];
     if (vevent.attendee) {
       const attendeeList = Array.isArray(vevent.attendee) ? vevent.attendee : [vevent.attendee];
@@ -143,7 +154,9 @@ export function parseIcsEvents(
         const status =
           typeof att === "string" ? null : (att.params?.PARTSTAT?.toLowerCase() ?? null);
         const role = typeof att === "string" ? null : (att.params?.ROLE?.toLowerCase() ?? null);
-        attendees.push({ email, name, status, role });
+        const cutype =
+          typeof att === "string" ? "unknown" : (CUTYPE_MAP[att.params?.CUTYPE ?? ""] ?? "unknown");
+        attendees.push({ email, name, status, role, type: cutype });
       }
     }
 
@@ -173,6 +186,32 @@ export function parseIcsEvents(
       }
     }
 
+    // Parse CATEGORIES
+    const rawCategories = (vevent as any).categories;
+    let categories: string[] = [];
+    if (rawCategories) {
+      if (Array.isArray(rawCategories)) {
+        categories = rawCategories.flatMap((c: string | string[]) => (Array.isArray(c) ? c : [c]));
+      } else if (typeof rawCategories === "string") {
+        categories = [rawCategories];
+      }
+    }
+
+    // Parse GEO — node-ical silently coerces GEO:; (empty) to {lat:0, lon:0},
+    // so reject the 0,0 sentinel to avoid false positives from malformed values.
+    const rawGeo = vevent.geo;
+    let geo: { latitude: number; longitude: number } | null = null;
+    if (
+      rawGeo &&
+      typeof rawGeo.lat === "number" &&
+      typeof rawGeo.lon === "number" &&
+      !Number.isNaN(rawGeo.lat) &&
+      !Number.isNaN(rawGeo.lon) &&
+      (rawGeo.lat !== 0 || rawGeo.lon !== 0)
+    ) {
+      geo = { latitude: rawGeo.lat, longitude: rawGeo.lon };
+    }
+
     // Build base properties shared by all occurrences
     const baseProps: Omit<ParsedEvent, "start" | "end"> = {
       uid: vevent.uid || "",
@@ -192,6 +231,8 @@ export function parseIcsEvents(
         : null,
       is_recurring: !!vevent.rrule,
       alarms,
+      categories,
+      geo,
     };
 
     // Expand recurring events into occurrences within the requested range

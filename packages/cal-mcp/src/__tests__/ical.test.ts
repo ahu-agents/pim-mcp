@@ -123,6 +123,62 @@ const ALARM_ABSOLUTE_ICS = [
   "END:VCALENDAR",
 ].join("\r\n");
 
+const CATEGORIES_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:cat-1@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Tagged Event",
+  "CATEGORIES:Meeting,Project-X",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const CATEGORIES_SINGLE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:cat-single@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Single Cat",
+  "CATEGORIES:Work",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const GEO_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:geo-1@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Located Event",
+  "GEO:37.386013;-122.082932",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const CUTYPE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:cutype-1@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "ATTENDEE;CN=Alice;CUTYPE=INDIVIDUAL:mailto:alice@example.com",
+  "ATTENDEE;CN=Room A;CUTYPE=ROOM:mailto:rooma@example.com",
+  "ATTENDEE;CN=Projector;CUTYPE=RESOURCE:mailto:projector@example.com",
+  "ATTENDEE;CN=Engineering;CUTYPE=GROUP:mailto:eng@example.com",
+  "ATTENDEE;CN=Bob:mailto:bob@example.com",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
 const ALARM_MULTIPLE_ICS = [
   "BEGIN:VCALENDAR",
   "VERSION:2.0",
@@ -335,6 +391,61 @@ END:VCALENDAR`;
   it("returns empty alarms array when no VALARM present", () => {
     const events = parseIcsEvents(SAMPLE_ICS);
     expect(events[0].alarms).toEqual([]);
+  });
+
+  it("parses CATEGORIES with multiple values", () => {
+    const events = parseIcsEvents(CATEGORIES_ICS);
+    expect(events[0].categories).toEqual(["Meeting", "Project-X"]);
+  });
+
+  it("parses CATEGORIES with single value", () => {
+    const events = parseIcsEvents(CATEGORIES_SINGLE_ICS);
+    expect(events[0].categories).toEqual(["Work"]);
+  });
+
+  it("returns empty categories array when none present", () => {
+    const events = parseIcsEvents(SAMPLE_ICS);
+    expect(events[0].categories).toEqual([]);
+  });
+
+  it("parses GEO property", () => {
+    const events = parseIcsEvents(GEO_ICS);
+    expect(events[0].geo).toEqual({
+      latitude: 37.386013,
+      longitude: -122.082932,
+    });
+  });
+
+  it("returns null geo when not present", () => {
+    const events = parseIcsEvents(SAMPLE_ICS);
+    expect(events[0].geo).toBeNull();
+  });
+
+  it("returns null geo when GEO has malformed values", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:geo-bad@example.com",
+      "DTSTART:20260310T140000Z",
+      "DTEND:20260310T150000Z",
+      "SUMMARY:Bad Geo",
+      "GEO:;",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(ics);
+    expect(events[0].geo).toBeNull();
+  });
+
+  it("parses CUTYPE on attendees", () => {
+    const events = parseIcsEvents(CUTYPE_ICS);
+    expect(events[0].attendees).toHaveLength(5);
+    expect(events[0].attendees[0].type).toBe("person");
+    expect(events[0].attendees[1].type).toBe("room");
+    expect(events[0].attendees[2].type).toBe("resource");
+    expect(events[0].attendees[3].type).toBe("group");
+    expect(events[0].attendees[4].type).toBe("unknown");
   });
 });
 
