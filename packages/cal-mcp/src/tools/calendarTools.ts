@@ -140,6 +140,26 @@ export const CALENDAR_TOOLS: Tool[] = [
           },
           description: "List of attendees",
         },
+        alarms: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["relative", "absolute"], description: "Alarm type" },
+              trigger: {
+                description:
+                  "Seconds offset (negative=before event) for relative, or ISO 8601 datetime for absolute",
+              },
+            },
+            required: ["type", "trigger"],
+          },
+          description: "Event reminders/alarms",
+        },
+        categories: {
+          type: "array",
+          items: { type: "string" },
+          description: "Event categories/tags",
+        },
       },
       required: ["calendar", "title", "start", "end"],
     },
@@ -187,6 +207,26 @@ export const CALENDAR_TOOLS: Tool[] = [
             required: ["email"],
           },
           description: "New attendee list (replaces existing)",
+        },
+        alarms: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["relative", "absolute"], description: "Alarm type" },
+              trigger: {
+                description:
+                  "Seconds offset (negative=before event) for relative, or ISO 8601 datetime for absolute",
+              },
+            },
+            required: ["type", "trigger"],
+          },
+          description: "Event reminders/alarms",
+        },
+        categories: {
+          type: "array",
+          items: { type: "string" },
+          description: "Event categories/tags",
         },
         span: {
           type: "string",
@@ -261,6 +301,30 @@ export const CALENDAR_TOOLS: Tool[] = [
                   required: ["email"],
                 },
                 description: "List of attendees",
+              },
+              alarms: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    type: {
+                      type: "string",
+                      enum: ["relative", "absolute"],
+                      description: "Alarm type",
+                    },
+                    trigger: {
+                      description:
+                        "Seconds offset (negative=before event) for relative, or ISO 8601 datetime for absolute",
+                    },
+                  },
+                  required: ["type", "trigger"],
+                },
+                description: "Event reminders/alarms",
+              },
+              categories: {
+                type: "array",
+                items: { type: "string" },
+                description: "Event categories/tags",
               },
             },
             required: ["title", "start", "end"],
@@ -490,6 +554,10 @@ export async function handleCalendarTool(
           location: args.location as string | undefined,
           description: args.description as string | undefined,
           attendees: args.attendees as Array<{ email: string; name?: string }> | undefined,
+          alarms: args.alarms as
+            | Array<{ type: "relative" | "absolute"; trigger: number | string }>
+            | undefined,
+          categories: args.categories as string[] | undefined,
           timezone: getTimezone(),
         });
         const uidMatch = icsString.match(/UID:(.+)/);
@@ -526,6 +594,12 @@ export async function handleCalendarTool(
               email: a.email,
               name: a.name ?? undefined,
             })),
+          alarms:
+            (args.alarms as
+              | Array<{ type: "relative" | "absolute"; trigger: number | string }>
+              | undefined) ??
+            existing.alarms?.map((a: any) => ({ type: a.type, trigger: a.trigger })),
+          categories: (args.categories as string[] | undefined) ?? existing.categories,
           timezone: getTimezone(),
         });
         const event = await service.updateEvent(
@@ -566,6 +640,8 @@ export async function handleCalendarTool(
           location?: string;
           description?: string;
           attendees?: Array<{ email: string; name?: string }>;
+          alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
+          categories?: string[];
         }>;
         const createdEvents = [];
         for (const input of eventInputs) {

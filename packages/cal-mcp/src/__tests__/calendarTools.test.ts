@@ -68,6 +68,27 @@ describe("calendarTools", () => {
     expect((tool.inputSchema as any).required).toEqual(["start", "end"]);
   });
 
+  it("create_event schema includes alarms and categories params", () => {
+    const tool = CALENDAR_TOOLS.find((t) => t.name === "create_event")!;
+    const props = (tool.inputSchema as any).properties;
+    expect(props.alarms).toBeDefined();
+    expect(props.categories).toBeDefined();
+  });
+
+  it("update_event schema includes alarms and categories params", () => {
+    const tool = CALENDAR_TOOLS.find((t) => t.name === "update_event")!;
+    const props = (tool.inputSchema as any).properties;
+    expect(props.alarms).toBeDefined();
+    expect(props.categories).toBeDefined();
+  });
+
+  it("create_events_batch schema includes alarms and categories in event items", () => {
+    const tool = CALENDAR_TOOLS.find((t) => t.name === "create_events_batch")!;
+    const eventProps = (tool.inputSchema as any).properties.events.items.properties;
+    expect(eventProps.alarms).toBeDefined();
+    expect(eventProps.categories).toBeDefined();
+  });
+
   describe("handleCalendarTool", () => {
     it("list_calendars wraps in { calendars } envelope", async () => {
       mockService.listCalendars.mockResolvedValue([
@@ -220,6 +241,91 @@ describe("calendarTools", () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.event.title).toBe("Updated Meeting");
+    });
+
+    it("create_event passes alarms and categories to generateEventIcs", async () => {
+      mockService.createEvent.mockResolvedValue({
+        uid: "new-1",
+        title: "Event with Alarm",
+        alarms: [{ type: "relative", trigger: -900, trigger_human: "15 minutes before" }],
+        categories: ["Work"],
+      });
+
+      const result = await handleCalendarTool(
+        "create_event",
+        {
+          calendar: "mailbox/Work",
+          title: "Event with Alarm",
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          alarms: [{ type: "relative", trigger: -900 }],
+          categories: ["Work"],
+        },
+        mockService as any,
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.event.alarms).toHaveLength(1);
+      expect(parsed.event.categories).toEqual(["Work"]);
+    });
+
+    it("update_event preserves existing alarms when not provided", async () => {
+      mockService.getEventWithMeta.mockResolvedValue({
+        event: {
+          uid: "evt-1",
+          title: "Meeting",
+          is_recurring: false,
+          recurrence_rule: null,
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          all_day: false,
+          location: null,
+          description: null,
+          attendees: [],
+          alarms: [{ type: "relative", trigger: -900, trigger_human: "15 minutes before" }],
+          categories: ["Meeting"],
+        },
+        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
+      });
+      mockService.updateEvent.mockResolvedValue({
+        uid: "evt-1",
+        title: "Updated Meeting",
+        alarms: [{ type: "relative", trigger: -900, trigger_human: "15 minutes before" }],
+        categories: ["Meeting"],
+      });
+
+      const result = await handleCalendarTool(
+        "update_event",
+        { calendar: "mailbox/Work", uid: "evt-1", title: "Updated Meeting" },
+        mockService as any,
+      );
+
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("list_calendars handler passes through read_only field", async () => {
+      mockService.listCalendars.mockResolvedValue([
+        {
+          calendar_id: "mailbox/Work",
+          display_name: "Work",
+          color: null,
+          source: "mailbox",
+          read_only: false,
+        },
+        {
+          calendar_id: "mailbox/Holidays",
+          display_name: "Holidays",
+          color: null,
+          source: "mailbox",
+          read_only: true,
+        },
+      ]);
+
+      const result = await handleCalendarTool("list_calendars", {}, mockService as any);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.calendars[0].read_only).toBe(false);
+      expect(parsed.calendars[1].read_only).toBe(true);
     });
 
     it("find_free_slots wraps in { slots, count } envelope", async () => {
