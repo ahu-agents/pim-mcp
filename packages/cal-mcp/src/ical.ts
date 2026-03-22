@@ -2,6 +2,12 @@ import { formatInTimezone } from "@miguelarios/pim-core";
 import ical, { ICalEventStatus } from "ical-generator";
 import nodeIcal from "node-ical";
 
+export interface ParsedAlarm {
+  type: "relative" | "absolute";
+  trigger: number | string;
+  trigger_human: string;
+}
+
 export interface ParsedEvent {
   uid: string;
   title: string;
@@ -24,6 +30,7 @@ export interface ParsedEvent {
   created: string | null;
   last_modified: string | null;
   is_recurring: boolean;
+  alarms: ParsedAlarm[];
 }
 
 export interface TimeRange {
@@ -41,6 +48,64 @@ export interface EventCreateProps {
   attendees?: Array<{ email: string; name?: string }>;
   uid?: string;
   timezone?: string;
+}
+
+function parseDurationToSeconds(duration: string): number {
+  const negative = duration.startsWith("-");
+  const match = duration.match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?/);
+  if (!match) return 0;
+  const days = Number.parseInt(match[1] || "0", 10);
+  const hours = Number.parseInt(match[2] || "0", 10);
+  const minutes = Number.parseInt(match[3] || "0", 10);
+  const seconds = Number.parseInt(match[4] || "0", 10);
+  const total = days * 86400 + hours * 3600 + minutes * 60 + seconds;
+  return negative ? -total : total;
+}
+
+function formatTriggerHuman(seconds: number): string {
+  if (seconds === 0) return "At time of event";
+  const abs = Math.abs(seconds);
+  const suffix = seconds < 0 ? "before" : "after";
+  const parts: string[] = [];
+  const days = Math.floor(abs / 86400);
+  const hours = Math.floor((abs % 86400) / 3600);
+  const minutes = Math.floor((abs % 3600) / 60);
+  if (days > 0) parts.push(`${days} ${days === 1 ? "day" : "days"}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
+  if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
+  if (parts.length === 0) {
+    const secs = abs;
+    parts.push(`${secs} ${secs === 1 ? "second" : "seconds"}`);
+  }
+  return `${parts.join(", ")} ${suffix}`;
+}
+
+function parseAlarm(alarm: { trigger: unknown; action: string }): ParsedAlarm {
+  const raw = alarm.trigger;
+
+  // Absolute trigger: node-ical returns an object with params.VALUE = "DATE-TIME" and a val string
+  if (raw !== null && typeof raw === "object") {
+    const obj = raw as { params?: { VALUE?: string }; val?: string };
+    const val = obj.val ?? "";
+    const date = new Date(
+      val.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?/, "$1-$2-$3T$4:$5:$6Z"),
+    );
+    return {
+      type: "absolute",
+      trigger: date.toISOString(),
+      trigger_human: date.toISOString(),
+    };
+  }
+
+  const trigger = String(raw);
+
+  // Relative trigger: duration string like -PT15M
+  const seconds = parseDurationToSeconds(trigger);
+  return {
+    type: "relative",
+    trigger: seconds,
+    trigger_human: formatTriggerHuman(seconds),
+  };
 }
 
 export function parseIcsEvents(
@@ -100,6 +165,14 @@ export function parseIcsEvents(
     // Detect all-day: node-ical sets datetype to "date" for VALUE=DATE
     const allDay = (vevent as any).datetype === "date";
 
+    // Extract VALARM alarms
+    const alarms: ParsedAlarm[] = [];
+    if ((vevent as any).alarms) {
+      for (const alarm of (vevent as any).alarms) {
+        alarms.push(parseAlarm(alarm));
+      }
+    }
+
     // Build base properties shared by all occurrences
     const baseProps: Omit<ParsedEvent, "start" | "end"> = {
       uid: vevent.uid || "",
@@ -118,6 +191,7 @@ export function parseIcsEvents(
         ? formatTime(new Date(vevent.lastmodified).toISOString())
         : null,
       is_recurring: !!vevent.rrule,
+      alarms,
     };
 
     // Expand recurring events into occurrences within the requested range

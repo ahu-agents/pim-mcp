@@ -42,6 +42,107 @@ SUMMARY:Company Holiday
 END:VEVENT
 END:VCALENDAR`;
 
+const ALARM_RELATIVE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-rel@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting with Alarm",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT15M",
+  "DESCRIPTION:Reminder",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_HOURS_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-hours@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT2H",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_DAYS_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-days@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-P1D",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_COMBINED_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-combined@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT1H30M",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_ABSOLUTE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-abs@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER;VALUE=DATE-TIME:20260310T133000Z",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALARM_MULTIPLE_ICS = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:alarm-multi@example.com",
+  "DTSTART:20260310T140000Z",
+  "DTEND:20260310T150000Z",
+  "SUMMARY:Meeting",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT15M",
+  "END:VALARM",
+  "BEGIN:VALARM",
+  "ACTION:DISPLAY",
+  "TRIGGER:-PT1H",
+  "END:VALARM",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
 describe("parseIcsEvents", () => {
   it("parses a single VEVENT from iCalendar string", () => {
     const events = parseIcsEvents(SAMPLE_ICS);
@@ -176,6 +277,64 @@ END:VCALENDAR`;
     expect(events[0].created).toBeNull();
     expect(events[0].last_modified).toBeNull();
     expect(events[0].url).toBeNull();
+  });
+
+  it("parses VALARM with relative trigger (minutes)", () => {
+    const events = parseIcsEvents(ALARM_RELATIVE_ICS);
+    expect(events[0].alarms).toHaveLength(1);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -900,
+      trigger_human: "15 minutes before",
+    });
+  });
+
+  it("parses VALARM with relative trigger (hours)", () => {
+    const events = parseIcsEvents(ALARM_HOURS_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -7200,
+      trigger_human: "2 hours before",
+    });
+  });
+
+  it("parses VALARM with relative trigger (days)", () => {
+    const events = parseIcsEvents(ALARM_DAYS_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -86400,
+      trigger_human: "1 day before",
+    });
+  });
+
+  it("parses VALARM with combined duration", () => {
+    const events = parseIcsEvents(ALARM_COMBINED_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "relative",
+      trigger: -5400,
+      trigger_human: "1 hour, 30 minutes before",
+    });
+  });
+
+  it("parses VALARM with absolute trigger", () => {
+    const events = parseIcsEvents(ALARM_ABSOLUTE_ICS);
+    expect(events[0].alarms[0]).toMatchObject({
+      type: "absolute",
+      trigger: "2026-03-10T13:30:00.000Z",
+    });
+    expect(events[0].alarms[0].trigger_human).toContain("2026");
+  });
+
+  it("parses multiple VALARMs on one event", () => {
+    const events = parseIcsEvents(ALARM_MULTIPLE_ICS);
+    expect(events[0].alarms).toHaveLength(2);
+    expect(events[0].alarms[0].trigger).toBe(-900);
+    expect(events[0].alarms[1].trigger).toBe(-3600);
+  });
+
+  it("returns empty alarms array when no VALARM present", () => {
+    const events = parseIcsEvents(SAMPLE_ICS);
+    expect(events[0].alarms).toEqual([]);
   });
 });
 
