@@ -1,5 +1,5 @@
 import { formatInTimezone } from "@miguelarios/pim-core";
-import ical, { ICalEventStatus } from "ical-generator";
+import ical, { ICalAlarmType, ICalEventStatus } from "ical-generator";
 import nodeIcal from "node-ical";
 
 export interface ParsedAlarm {
@@ -51,6 +51,11 @@ export interface EventCreateProps {
   attendees?: Array<{ email: string; name?: string }>;
   uid?: string;
   timezone?: string;
+  alarms?: Array<{
+    type: "relative" | "absolute";
+    trigger: number | string;
+  }>;
+  categories?: string[];
 }
 
 const CUTYPE_MAP: Record<string, string> = {
@@ -297,5 +302,28 @@ export function generateEventIcs(props: EventCreateProps): string {
     }
   }
 
-  return calendar.toString();
+  if (props.alarms) {
+    for (const alarm of props.alarms) {
+      if (alarm.type === "relative" && typeof alarm.trigger === "number") {
+        event.createAlarm({
+          type: ICalAlarmType.display,
+          triggerBefore: Math.abs(alarm.trigger),
+        });
+      } else if (alarm.type === "absolute" && typeof alarm.trigger === "string") {
+        event.createAlarm({
+          type: ICalAlarmType.display,
+          trigger: new Date(alarm.trigger),
+        });
+      }
+    }
+  }
+
+  let icsString = calendar.toString();
+
+  if (props.categories && props.categories.length > 0) {
+    const categoriesLine = `CATEGORIES:${props.categories.join(",")}`;
+    icsString = icsString.replace("END:VEVENT", `${categoriesLine}\r\nEND:VEVENT`);
+  }
+
+  return icsString;
 }

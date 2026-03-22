@@ -584,6 +584,78 @@ describe("generateEventIcs", () => {
     expect(ics).toMatch(/UID:.+/);
   });
 
+  it("generates ICS with relative alarm", () => {
+    const ics = generateEventIcs({
+      title: "Alarm Test",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "relative", trigger: -900 }],
+    });
+    expect(ics).toContain("BEGIN:VALARM");
+    expect(ics).toContain("END:VALARM");
+    expect(ics).toContain("TRIGGER:-PT15M");
+  });
+
+  it("generates ICS with absolute alarm", () => {
+    const ics = generateEventIcs({
+      title: "Alarm Test",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "absolute", trigger: "2026-03-10T13:30:00Z" }],
+    });
+    expect(ics).toContain("BEGIN:VALARM");
+    expect(ics).toContain("20260310T133000Z");
+  });
+
+  it("generates ICS with multiple alarms", () => {
+    const ics = generateEventIcs({
+      title: "Alarm Test",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [
+        { type: "relative", trigger: -900 },
+        { type: "relative", trigger: -3600 },
+      ],
+    });
+    const alarmCount = (ics.match(/BEGIN:VALARM/g) || []).length;
+    expect(alarmCount).toBe(2);
+  });
+
+  it("generates ICS with categories", () => {
+    const ics = generateEventIcs({
+      title: "Tagged Event",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      categories: ["Meeting", "Project-X"],
+    });
+    expect(ics).toContain("CATEGORIES:Meeting,Project-X");
+  });
+
+  it("generates ICS with alarms and categories together", () => {
+    const ics = generateEventIcs({
+      title: "Full Event",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "relative", trigger: -600 }],
+      categories: ["Work"],
+    });
+    expect(ics).toContain("BEGIN:VALARM");
+    expect(ics).toContain("CATEGORIES:Work");
+  });
+
+  it("alarm round-trip: generate then parse preserves alarms", () => {
+    const ics = generateEventIcs({
+      title: "Round Trip",
+      start: "2026-03-10T14:00:00Z",
+      end: "2026-03-10T15:00:00Z",
+      alarms: [{ type: "relative", trigger: -900 }],
+    });
+    const parsed = parseIcsEvents(ics);
+    expect(parsed[0].alarms).toHaveLength(1);
+    expect(parsed[0].alarms[0].type).toBe("relative");
+    expect(parsed[0].alarms[0].trigger).toBe(-900);
+  });
+
   describe("timezone in generated ICS", () => {
     it("generates ICS with user timezone when timezone is provided", () => {
       const ics = generateEventIcs({
