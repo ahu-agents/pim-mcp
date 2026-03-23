@@ -423,6 +423,45 @@ describe("send_email handler", () => {
     expect(parsed.messageId).toBe("<sent-1@test.com>");
   });
 
+  it("coerces string to to array when client passes single string", async () => {
+    const result = await handleEmailTool(
+      "send_email",
+      { to: "r@test.com" as unknown, subject: "Hi", text: "Hello" },
+      mockImapService,
+      mockSmtpService,
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.status).toBe("sent");
+    expect(mockComposeRawMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ to: ["r@test.com"] }),
+    );
+  });
+
+  it("coerces string cc and bcc to arrays when client passes single strings", async () => {
+    const result = await handleEmailTool(
+      "send_email",
+      {
+        to: ["r@test.com"],
+        cc: "cc@test.com" as unknown,
+        bcc: "bcc@test.com" as unknown,
+        subject: "Hi",
+        text: "Hello",
+      },
+      mockImapService,
+      mockSmtpService,
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.status).toBe("sent");
+    expect(mockComposeRawMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cc: ["cc@test.com"],
+        bcc: ["bcc@test.com"],
+      }),
+    );
+  });
+
   it("skips Sent folder append when autoSent is true", async () => {
     mockSmtpService.config = {
       autoSent: true,
