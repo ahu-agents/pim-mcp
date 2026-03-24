@@ -17,7 +17,7 @@ This creates a gap: an LLM managing a user's calendar cannot reschedule a single
 
 ## Design Principles
 
-**Unified schema alignment.** The tool interface (param names, response shapes, error codes) must match macos-calendar-mcp so the LLM sees a consistent abstraction regardless of backend. `occurrence_date` as both a response field and input param. `span: "this"/"all"` with the same defaults.
+**Unified schema alignment.** The tool interface (param names, response shapes, error codes) must match macos-calendar-mcp so the LLM sees a consistent abstraction regardless of backend. `occurrence_date` as both a response field and input param. `span: "this"/"all"` with the same defaults. **Note:** `occurrence_date` is not in the locked unified spec v1.1 — this spec is a co-requisite with a v1.2 amendment that adds `occurrence_date` to EventSummary and as a tool param. Both MCPs already use it as a backend extra; v1.2 promotes it to a core field.
 
 **ICS string preservation.** CalDAV calendar objects may contain properties we don't parse (X-properties, VTIMEZONE, etc.). Operations on the raw ICS must preserve unrecognized content — targeted insertions, not regeneration from scratch.
 
@@ -35,7 +35,7 @@ This creates a gap: an LLM managing a user's calendar cannot reschedule a single
 | Implement `span: "this"` for `delete_event` on recurring events | Handler + ICS manipulation | New |
 | Add `occurrence_date` param to `update_event` and `delete_event` | Tool schema | Enhanced |
 | Add ICS manipulation functions (EXDATE, exception VEVENT, combine) | ical.ts | New |
-| Add `fetchRawCalendarObject()` to CalDavService | Service layer | New |
+| Expose raw calendar object fetch in CalDavService | Service layer | Enhanced |
 
 ---
 
@@ -66,7 +66,7 @@ interface EventSummary {
 }
 ```
 
-`EventFull` inherits `occurrence_date` via `extends EventSummary`.
+`EventFull` inherits `occurrence_date` via `extends EventSummary`. `ParsedEvent` (in ical.ts) also gains `occurrence_date: string | null` — it's the source type that flows through `toEventFull()` and `toEventSummary()` in CalDavService.
 
 ### Population Rules
 
@@ -152,16 +152,19 @@ Three new functions in `ical.ts` for manipulating raw ICS strings.
 
 ### `addExdateToIcs(icsContent: string, occurrenceDate: string, allDay: boolean): string`
 
-Inserts an EXDATE line into the master VEVENT to exclude a specific occurrence.
+Inserts an EXDATE line into the master VEVENT to exclude a specific occurrence. **Used only by delete `span: "this"` — update uses RECURRENCE-ID exception instead (no EXDATE needed).**
 
 ```
 Input:  Raw ICS content, occurrence date, all-day flag
-Output: ICS content with EXDATE added before END:VEVENT
+Output: ICS content with EXDATE added before the first END:VEVENT
 
 Behavior:
 - Formats date as EXDATE:20260324T090000Z (timed) or EXDATE;VALUE=DATE:20260324 (all-day)
+- Uses the same timezone as the master event's DTSTART (TZID param if present)
 - Inserts before the first END:VEVENT in the ICS
 - If an EXDATE for that date already exists, no-op (idempotent)
+  - Idempotency check: normalize both dates to UTC before comparison to handle
+    format differences (Z suffix vs TZID-parameterized, comma-separated lists)
 - Preserves all other ICS content unchanged
 ```
 
@@ -177,9 +180,10 @@ Behavior:
 - Parses master ICS to extract UID and base event properties
 - Applies overrides (title, start, end, location, description, attendees, alarms, categories)
 - Non-overridden properties inherit from the master
-- Sets RECURRENCE-ID to the occurrence date
+- Sets RECURRENCE-ID to the occurrence date (same timezone format as master DTSTART)
 - Sets DTSTART/DTEND from overrides (or original occurrence time if not overridden)
-- Generates via ical-generator or string construction
+- Sets SEQUENCE to master's SEQUENCE + 1 (RFC 5545 best practice for modifications)
+- Built via string construction (not ical-generator — it does not support RECURRENCE-ID)
 - Returns the VEVENT block as a string (not a full VCALENDAR)
 ```
 
@@ -188,10 +192,12 @@ Behavior:
 Merges the exception VEVENT into the master's VCALENDAR.
 
 ```
-Input:  Master ICS (with EXDATE already added), exception VEVENT string
+Input:  Master ICS, exception VEVENT string
 Output: Combined ICS with both master and exception VEVENTs in one VCALENDAR
 
 Behavior:
+- If an existing VEVENT with matching RECURRENCE-ID already exists in the ICS,
+  remove it first (prevents duplicates when re-editing an already-modified occurrence)
 - Inserts the exception VEVENT before END:VCALENDAR
 - Preserves VTIMEZONE, X-properties, and all other components
 - Returns a valid ICS string ready for CalDAV PUT
@@ -203,13 +209,25 @@ The master ICS may contain properties and components that our parser doesn't mod
 
 ---
 
-## Change 4: CalDavService — `fetchRawCalendarObject()`
+## Change 4: CalDavService — Expose `findCalendarObject()`
 
 ### Purpose
 
-The existing `getEventWithMeta()` parses the ICS into EventFull, losing the original text. The ICS manipulation functions need the raw string.
+The existing private `findCalendarObject()` method already returns `{ url, etag, data }` — the raw ICS string and CalDAV metadata needed for ICS manipulation. Rather than creating a duplicate method, make it accessible to the handler.
 
-### Method
+### Approach
+
+Change `findCalendarObject()` from `private` to `public` (or add a thin public wrapper). The method signature is already correct:
+
+```typescript
+async findCalendarObject(
+  client: DAVClient,
+  calendar: any,
+  uid: string,
+): Promise<{ url: string; etag?: string; data?: string }>
+```
+
+Since this requires a `client` and `calendar` param (internal tsdav objects), the cleanest approach is a new public method that handles connection setup:
 
 ```typescript
 async fetchRawCalendarObject(
@@ -218,7 +236,7 @@ async fetchRawCalendarObject(
 ): Promise<{ data: string; url: string; etag: string }>
 ```
 
-Reuses the existing search-by-UID pattern from `getEventWithMeta()` but returns the raw `data` string and CalDAV metadata instead of parsing into EventFull.
+This wraps `findCalendarObject()` with the connection boilerplate (same pattern as `getEventWithMeta`), asserts `data` and `etag` are non-null, and returns them.
 
 ---
 
@@ -233,12 +251,15 @@ Reuses the existing search-by-UID pattern from `getEventWithMeta()` but returns 
 3. If is_recurring AND span === "this":
    a. Validate occurrence_date is present → VALIDATION_FAILED if missing
    b. fetchRawCalendarObject() → { data: masterIcs, url, etag }
-   c. Parse master to get base properties for non-overridden fields
-   d. addExdateToIcs(masterIcs, occurrence_date, existing.all_day)
+   c. Validate occurrence_date matches an RRULE instance or existing RECURRENCE-ID
+      (expand RRULE via parseIcsEvents with a range around the date, or check existing
+      exception VEVENTs) → VALIDATION_FAILED if no match
+   d. Parse master to get base properties for non-overridden fields
    e. createExceptionVevent(masterIcs, occurrence_date, overrides, existing.all_day)
-   f. combineIcsComponents(masterWithExdate, exceptionVevent)
+   f. combineIcsComponents(masterIcs, exceptionVevent)
+      (removes any existing exception for this date, then inserts new one)
    g. updateEvent(calendarId, uid, combinedIcs, { url, etag })
-   h. Return the exception event as EventFull
+   h. Return { event: EventFull } (the exception event's properties)
 
 4. If is_recurring AND span === "future":
    Return not_implemented (deferred)
@@ -261,9 +282,11 @@ Reuses the existing search-by-UID pattern from `getEventWithMeta()` but returns 
    c. If recurring:
       i.   Validate occurrence_date is present → VALIDATION_FAILED if missing
       ii.  fetchRawCalendarObject() → { data: masterIcs, url, etag }
-      iii. addExdateToIcs(masterIcs, occurrence_date, event.all_day)
-      iv.  updateEvent(calendarId, uid, masterWithExdate, { url, etag })
-      v.   Return { deleted: true, uid }
+      iii. Validate occurrence_date matches an RRULE instance or existing RECURRENCE-ID
+      iv.  addExdateToIcs(masterIcs, occurrence_date, event.all_day)
+      v.   If an exception VEVENT exists for this date, remove it from the ICS
+      vi.  updateEvent(calendarId, uid, masterWithExdate, { url, etag })
+      vii. Return { deleted: true, uid }
 
 3. If span === "future":
    Fetch event, check is_recurring → not_implemented if recurring
@@ -274,14 +297,7 @@ Reuses the existing search-by-UID pattern from `getEventWithMeta()` but returns 
 
 ### Response for `update_event` span="this"
 
-```typescript
-{
-  status: "updated",
-  span: "this",
-  occurrence_date: "<the targeted date>",
-  event: EventFull  // the exception event's properties
-}
-```
+Same shape as existing `update_event` response — `{ event: EventFull }`. The `EventFull` object contains the exception event's properties, with `occurrence_date` set to the targeted date and `is_recurring: true`. No extra top-level fields — keeps the response shape consistent with the unified spec.
 
 ---
 
@@ -294,6 +310,8 @@ Reuses the existing search-by-UID pattern from `getEventWithMeta()` but returns 
 - **All-day events:** EXDATE and RECURRENCE-ID use `VALUE=DATE` format (`20260324`) instead of datetime format (`20260324T090000Z`). The `allDay` flag from the master event determines which format to use.
 
 - **Timezone handling:** RECURRENCE-ID and EXDATE should use the same timezone as the master event's DTSTART. If DTSTART is `TZID=America/Chicago:20260324T090000`, then RECURRENCE-ID should also use that TZID.
+
+- **list_events with detail_level="full":** When the handler fetches full details for expanded occurrences, it must preserve the `occurrence_date` from the summary-level expansion rather than re-fetching via `getEvent()` (which returns the master with `occurrence_date: null`).
 
 ---
 
