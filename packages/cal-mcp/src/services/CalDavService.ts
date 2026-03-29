@@ -30,6 +30,7 @@ export interface EventSummary {
   location: string | null;
   status: string | null;
   is_recurring: boolean;
+  occurrence_date: string | null;
 }
 
 export interface EventFull extends EventSummary {
@@ -245,6 +246,7 @@ export class CalDavService {
             location: event.location,
             status: event.status,
             is_recurring: event.is_recurring,
+            occurrence_date: event.occurrence_date,
           });
         }
       }
@@ -416,6 +418,29 @@ export class CalDavService {
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       this.calendarsCache.delete(account.id);
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  async fetchRawCalendarObject(
+    calendarId: string,
+    uid: string,
+  ): Promise<{ data: string; url: string; etag: string }> {
+    const { account, calendarName } = this.resolveAccount(calendarId);
+    try {
+      const client = await this.getClient(account);
+      const calendar = await this.findCalendar(client, calendarName, account.id);
+      const obj = await this.findCalendarObject(client, calendar, uid);
+      if (!obj.data || !obj.etag) {
+        throw new CalendarError(
+          `Calendar object for "${uid}" has no data or etag`,
+          ErrorCode.EVENT_NOT_FOUND,
+          uid,
+        );
+      }
+      return { data: obj.data, url: obj.url, etag: obj.etag };
+    } catch (error) {
+      if (error instanceof CalendarError) throw error;
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
   }
@@ -628,6 +653,7 @@ export class CalDavService {
       location: event.location,
       status: event.status,
       is_recurring: event.is_recurring,
+      occurrence_date: event.occurrence_date,
       description: event.description,
       url: event.url,
       availability: event.availability,

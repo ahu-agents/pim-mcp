@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { generateEventIcs, parseIcsEvents } from "../ical.js";
+import {
+  addExdateToIcs,
+  combineIcsComponents,
+  createExceptionVevent,
+  generateEventIcs,
+  parseIcsEvents,
+} from "../ical.js";
 
 const SAMPLE_ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -515,6 +521,69 @@ describe("recurrence expansion", () => {
     expect(events).toHaveLength(1);
     expect(events[0].start).toBe("2026-03-10T14:00:00.000Z");
   });
+
+  it("sets occurrence_date on expanded recurring instances", () => {
+    const events = parseIcsEvents(weeklyIcs, {
+      start: "2026-03-01T00:00:00Z",
+      end: "2026-03-15T00:00:00Z",
+    });
+    expect(events.length).toBe(2);
+    for (const evt of events) {
+      expect(evt.occurrence_date).toBe(evt.start);
+    }
+  });
+
+  it("sets occurrence_date to null for non-recurring events", () => {
+    const singleIcs = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:single-event",
+      "DTSTART:20260310T140000Z",
+      "DTEND:20260310T150000Z",
+      "SUMMARY:One-off",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(singleIcs);
+    expect(events[0].occurrence_date).toBeNull();
+  });
+
+  it("sets occurrence_date to null for master event (no range)", () => {
+    const events = parseIcsEvents(weeklyIcs);
+    expect(events[0].occurrence_date).toBeNull();
+  });
+
+  it("sets occurrence_date from RECURRENCE-ID on exception VEVENTs", () => {
+    // Note: node-ical uses UID as object key, so exception VEVENTs must have a
+    // distinct key to be independently accessible. In practice, CalDAV servers
+    // store exceptions as separate .ics objects (separate fetchCalendarObjects
+    // results), each with a unique URL but the same UID. We simulate that here
+    // by giving the exception a unique UID so node-ical doesn't collapse it.
+    const icsWithException = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:weekly-meeting",
+      "DTSTART:20260101T100000Z",
+      "DTEND:20260101T110000Z",
+      "RRULE:FREQ=WEEKLY;COUNT=52",
+      "SUMMARY:Weekly Standup",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:weekly-meeting-exception-20260305",
+      "RECURRENCE-ID:20260305T100000Z",
+      "DTSTART:20260305T140000Z",
+      "DTEND:20260305T150000Z",
+      "SUMMARY:Rescheduled Standup",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(icsWithException);
+    const exception = events.find((e) => e.title === "Rescheduled Standup");
+    expect(exception).toBeDefined();
+    expect(exception!.occurrence_date).toBe("2026-03-05T10:00:00.000Z");
+  });
 });
 
 describe("generateEventIcs", () => {
@@ -676,5 +745,204 @@ describe("generateEventIcs", () => {
       });
       expect(ics).toContain("20260314T150000Z");
     });
+  });
+});
+
+describe("addExdateToIcs", () => {
+  const masterIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "DTSTART:20260101T100000Z",
+    "DTEND:20260101T110000Z",
+    "RRULE:FREQ=WEEKLY;COUNT=52",
+    "SUMMARY:Weekly Standup",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  it("inserts EXDATE line for a timed event", () => {
+    const result = addExdateToIcs(masterIcs, "2026-03-05T10:00:00.000Z", false);
+    expect(result).toContain("EXDATE:20260305T100000Z");
+    expect(result).toContain("END:VEVENT");
+    // EXDATE should be before END:VEVENT
+    const exdateIdx = result.indexOf("EXDATE:20260305T100000Z");
+    const endIdx = result.indexOf("END:VEVENT");
+    expect(exdateIdx).toBeLessThan(endIdx);
+  });
+
+  it("inserts EXDATE with VALUE=DATE for all-day events", () => {
+    const allDayIcs = masterIcs.replace(
+      "DTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z",
+      "DTSTART;VALUE=DATE:20260101\r\nDTEND;VALUE=DATE:20260102",
+    );
+    const result = addExdateToIcs(allDayIcs, "2026-03-05", true);
+    expect(result).toContain("EXDATE;VALUE=DATE:20260305");
+  });
+
+  it("is idempotent — does not add duplicate EXDATE", () => {
+    const first = addExdateToIcs(masterIcs, "2026-03-05T10:00:00.000Z", false);
+    const second = addExdateToIcs(first, "2026-03-05T10:00:00.000Z", false);
+    const count = (second.match(/EXDATE/g) || []).length;
+    expect(count).toBe(1);
+  });
+
+  it("preserves all other ICS content", () => {
+    const result = addExdateToIcs(masterIcs, "2026-03-05T10:00:00.000Z", false);
+    expect(result).toContain("UID:weekly-meeting");
+    expect(result).toContain("RRULE:FREQ=WEEKLY;COUNT=52");
+    expect(result).toContain("SUMMARY:Weekly Standup");
+    expect(result).toContain("BEGIN:VCALENDAR");
+    expect(result).toContain("END:VCALENDAR");
+  });
+});
+
+describe("createExceptionVevent", () => {
+  const masterIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "DTSTART:20260101T100000Z",
+    "DTEND:20260101T110000Z",
+    "RRULE:FREQ=WEEKLY;COUNT=52",
+    "SUMMARY:Weekly Standup",
+    "LOCATION:Room A",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  it("creates exception VEVENT with RECURRENCE-ID and overridden title", () => {
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        title: "Special Standup",
+      },
+      false,
+    );
+    expect(result).toContain("BEGIN:VEVENT");
+    expect(result).toContain("END:VEVENT");
+    expect(result).toContain("UID:weekly-meeting");
+    expect(result).toContain("RECURRENCE-ID:20260305T100000Z");
+    expect(result).toContain("SUMMARY:Special Standup");
+    // Inherits non-overridden properties
+    expect(result).toContain("LOCATION:Room A");
+  });
+
+  it("overrides start and end times", () => {
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        start: "2026-03-05T14:00:00.000Z",
+        end: "2026-03-05T15:00:00.000Z",
+      },
+      false,
+    );
+    expect(result).toContain("DTSTART:20260305T140000Z");
+    expect(result).toContain("DTEND:20260305T150000Z");
+  });
+
+  it("uses original occurrence time when start/end not overridden", () => {
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        title: "Renamed",
+      },
+      false,
+    );
+    // Should use the occurrence date's time, not the master's original DTSTART
+    expect(result).toContain("DTSTART:20260305T100000Z");
+    expect(result).toContain("DTEND:20260305T110000Z");
+  });
+
+  it("handles all-day events with VALUE=DATE format", () => {
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05",
+      {
+        title: "All Day Exception",
+      },
+      true,
+    );
+    expect(result).toContain("RECURRENCE-ID;VALUE=DATE:20260305");
+    expect(result).toContain("DTSTART;VALUE=DATE:");
+  });
+
+  it("includes SEQUENCE property", () => {
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        title: "Updated",
+      },
+      false,
+    );
+    expect(result).toMatch(/SEQUENCE:\d+/);
+  });
+});
+
+describe("combineIcsComponents", () => {
+  const masterIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "DTSTART:20260101T100000Z",
+    "DTEND:20260101T110000Z",
+    "RRULE:FREQ=WEEKLY;COUNT=52",
+    "SUMMARY:Weekly Standup",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  const exceptionVevent = [
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "RECURRENCE-ID:20260305T100000Z",
+    "DTSTART:20260305T140000Z",
+    "DTEND:20260305T150000Z",
+    "SUMMARY:Rescheduled Standup",
+    "END:VEVENT",
+  ].join("\r\n");
+
+  it("inserts exception VEVENT before END:VCALENDAR", () => {
+    const result = combineIcsComponents(masterIcs, exceptionVevent);
+    expect(result).toContain("RECURRENCE-ID:20260305T100000Z");
+    expect(result).toContain("SUMMARY:Rescheduled Standup");
+    // Both VEVENTs present
+    const veventCount = (result.match(/BEGIN:VEVENT/g) || []).length;
+    expect(veventCount).toBe(2);
+    // Ends with END:VCALENDAR
+    expect(result.trimEnd()).toMatch(/END:VCALENDAR$/);
+  });
+
+  it("removes existing exception with same RECURRENCE-ID before inserting", () => {
+    // First combine
+    const first = combineIcsComponents(masterIcs, exceptionVevent);
+    // Second combine with updated exception
+    const updatedException = exceptionVevent.replace(
+      "SUMMARY:Rescheduled Standup",
+      "SUMMARY:Updated Standup",
+    );
+    const result = combineIcsComponents(first, updatedException);
+    // Should have exactly 2 VEVENTs (master + new exception), not 3
+    const veventCount = (result.match(/BEGIN:VEVENT/g) || []).length;
+    expect(veventCount).toBe(2);
+    expect(result).toContain("SUMMARY:Updated Standup");
+    expect(result).not.toContain("SUMMARY:Rescheduled Standup");
+  });
+
+  it("preserves VTIMEZONE and other components", () => {
+    const icsWithTz = masterIcs.replace(
+      "BEGIN:VEVENT",
+      "BEGIN:VTIMEZONE\r\nTZID:America/Chicago\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT",
+    );
+    const result = combineIcsComponents(icsWithTz, exceptionVevent);
+    expect(result).toContain("VTIMEZONE");
+    expect(result).toContain("TZID:America/Chicago");
   });
 });

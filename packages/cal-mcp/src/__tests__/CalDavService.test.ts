@@ -1050,4 +1050,53 @@ describe("CalDavService", () => {
       expect(loginSpy).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("fetchRawCalendarObject", () => {
+    it("returns raw ICS data, url, and etag for a given uid", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      const rawIcs = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:test-uid\nEND:VEVENT\nEND:VCALENDAR";
+
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: rawIcs, url: "/cal/obj1.ics", etag: '"etag-123"' },
+      ]);
+      (parseIcsEvents as any).mockReturnValue([{ uid: "test-uid" }]);
+
+      const result = await service.fetchRawCalendarObject("mailbox/Work", "test-uid");
+
+      expect(result.data).toBe(rawIcs);
+      expect(result.url).toBe("/cal/obj1.ics");
+      expect(result.etag).toBe('"etag-123"');
+    });
+
+    it("throws when uid not found", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "BEGIN:VCALENDAR...END:VCALENDAR", url: "/cal/other.ics", etag: '"e1"' },
+      ]);
+      (parseIcsEvents as any).mockReturnValue([{ uid: "other-uid" }]);
+
+      await expect(service.fetchRawCalendarObject("mailbox/Work", "nonexistent")).rejects.toThrow();
+    });
+
+    it("throws CalendarError when object has no data", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      // Simulate an object returned with no data field
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { url: "/cal/obj1.ics", etag: '"etag-123"' },
+      ]);
+      // parseIcsEvents won't be called (obj.data is falsy, skipped in findCalendarObject)
+      (parseIcsEvents as any).mockReturnValue([{ uid: "test-uid" }]);
+
+      await expect(service.fetchRawCalendarObject("mailbox/Work", "test-uid")).rejects.toThrow();
+    });
+
+    it("throws for unknown provider", async () => {
+      await expect(service.fetchRawCalendarObject("unknown/Work", "test-uid")).rejects.toThrow();
+    });
+  });
 });
