@@ -337,6 +337,101 @@ export function generateEventIcs(props: EventCreateProps): string {
   return icsString;
 }
 
+export function createExceptionVevent(
+  masterIcs: string,
+  occurrenceDate: string,
+  overrides: {
+    title?: string;
+    start?: string;
+    end?: string;
+    all_day?: boolean;
+    location?: string;
+    description?: string;
+    attendees?: Array<{ email: string; name?: string }>;
+    alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
+    categories?: string[];
+  },
+  allDay: boolean,
+): string {
+  // Parse master to extract base properties
+  const masterEvents = parseIcsEvents(masterIcs);
+  const master = masterEvents[0];
+  if (!master) throw new Error("Could not parse master event from ICS");
+
+  const uid = master.uid;
+  const date = new Date(occurrenceDate);
+
+  // Format dates for iCal
+  const formatIcalDate = (iso: string, isAllDay: boolean): string => {
+    const d = new Date(iso);
+    if (isAllDay) return d.toISOString().slice(0, 10).replace(/-/g, "");
+    return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  };
+
+  // Determine effective values (override or inherit)
+  const title = overrides.title ?? master.title;
+  const location = overrides.location ?? master.location;
+  const description = overrides.description ?? master.description;
+  const isAllDay = overrides.all_day ?? allDay;
+
+  // For start/end: default to the occurrence's original time (not master's DTSTART)
+  const occDuration = new Date(master.end).getTime() - new Date(master.start).getTime();
+  const defaultStart = occurrenceDate;
+  const defaultEnd = new Date(date.getTime() + occDuration).toISOString();
+  const effectiveStart = overrides.start ?? defaultStart;
+  const effectiveEnd = overrides.end ?? defaultEnd;
+
+  // Build RECURRENCE-ID line
+  const recurrenceId = isAllDay
+    ? `RECURRENCE-ID;VALUE=DATE:${formatIcalDate(occurrenceDate, true)}`
+    : `RECURRENCE-ID:${formatIcalDate(occurrenceDate, false)}`;
+
+  // Build DTSTART/DTEND lines
+  const dtstart = isAllDay
+    ? `DTSTART;VALUE=DATE:${formatIcalDate(effectiveStart, true)}`
+    : `DTSTART:${formatIcalDate(effectiveStart, false)}`;
+  const dtend = isAllDay
+    ? `DTEND;VALUE=DATE:${formatIcalDate(effectiveEnd, true)}`
+    : `DTEND:${formatIcalDate(effectiveEnd, false)}`;
+
+  // Extract SEQUENCE from master (default 0), increment
+  const seqMatch = masterIcs.match(/SEQUENCE:(\d+)/);
+  const sequence = (seqMatch ? Number.parseInt(seqMatch[1], 10) : 0) + 1;
+
+  const lines = [
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    recurrenceId,
+    dtstart,
+    dtend,
+    `SEQUENCE:${sequence}`,
+    `SUMMARY:${title}`,
+  ];
+
+  if (location) lines.push(`LOCATION:${location}`);
+  if (description) lines.push(`DESCRIPTION:${description}`);
+
+  // Attendees
+  const attendees = overrides.attendees ?? master.attendees;
+  if (attendees) {
+    for (const att of attendees) {
+      const cn = att.name ? `;CN=${att.name}` : "";
+      lines.push(`ATTENDEE${cn}:mailto:${att.email}`);
+    }
+  }
+
+  // Categories
+  const categories = overrides.categories ?? master.categories;
+  if (categories && categories.length > 0) {
+    lines.push(`CATEGORIES:${categories.join(",")}`);
+  }
+
+  lines.push("STATUS:CONFIRMED");
+  lines.push("END:VEVENT");
+
+  return lines.join("\r\n");
+}
+
 export function addExdateToIcs(
   icsContent: string,
   occurrenceDate: string,
