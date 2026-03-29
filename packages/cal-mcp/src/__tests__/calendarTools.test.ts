@@ -507,5 +507,53 @@ describe("calendarTools", () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("occurrence_date");
     });
+
+    it("removes existing exception VEVENT when deleting occurrence", async () => {
+      const icsWithException = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "BEGIN:VEVENT",
+        "UID:weekly",
+        "DTSTART:20260101T100000Z",
+        "DTEND:20260101T110000Z",
+        "RRULE:FREQ=WEEKLY;COUNT=52",
+        "SUMMARY:Standup",
+        "END:VEVENT",
+        "BEGIN:VEVENT",
+        "UID:weekly",
+        "RECURRENCE-ID:20260305T100000Z",
+        "DTSTART:20260305T140000Z",
+        "DTEND:20260305T150000Z",
+        "SUMMARY:Rescheduled",
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\r\n");
+
+      mockService.getEventWithMeta.mockResolvedValueOnce({
+        event: { uid: "weekly", is_recurring: true, all_day: false, occurrence_date: null },
+        meta: { url: "/cal/weekly.ics", etag: '"etag-1"' },
+      });
+      mockService.fetchRawCalendarObject.mockResolvedValueOnce({
+        data: icsWithException,
+        url: "/cal/weekly.ics",
+        etag: '"etag-1"',
+      });
+      mockService.updateEvent.mockResolvedValueOnce({});
+
+      await handleCalendarTool(
+        "delete_event",
+        {
+          calendar: "prov/Cal",
+          uid: "weekly",
+          span: "this",
+          occurrence_date: "2026-03-05T10:00:00.000Z",
+        },
+        mockService as any,
+      );
+
+      const icsArg = mockService.updateEvent.mock.calls[0][2];
+      expect(icsArg).toContain("EXDATE");
+      expect(icsArg).not.toContain("RECURRENCE-ID");
+    });
   });
 });

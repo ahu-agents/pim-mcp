@@ -646,17 +646,22 @@ export async function handleCalendarTool(
           });
 
           // Build response from overrides + existing
+          const occDuration = new Date(existing.end).getTime() - new Date(existing.start).getTime();
           const responseEvent = {
-            uid: existing.uid,
+            ...existing,
             title: overrides.title ?? existing.title,
             start: overrides.start ?? occurrenceDate,
-            end: overrides.end ?? existing.end,
+            end:
+              overrides.end ??
+              new Date(new Date(occurrenceDate).getTime() + occDuration).toISOString(),
             all_day: overrides.all_day ?? existing.all_day,
             location: overrides.location ?? existing.location,
             description: overrides.description ?? existing.description,
-            is_recurring: true,
+            attendees: overrides.attendees ?? existing.attendees,
+            alarms: overrides.alarms ?? existing.alarms,
+            categories: overrides.categories ?? existing.categories,
             occurrence_date: occurrenceDate,
-            calendar_id: args.calendar as string,
+            recurrence_rule: null,
           };
           return ok({ event: responseEvent });
         }
@@ -716,7 +721,20 @@ export async function handleCalendarTool(
               args.uid as string,
             );
 
-            const updatedIcs = addExdateToIcs(rawObj.data, occurrenceDate, existing.all_day);
+            let updatedIcs = addExdateToIcs(rawObj.data, occurrenceDate, existing.all_day);
+
+            // Remove any existing exception VEVENT for this date
+            const recIdDate = new Date(occurrenceDate);
+            const formattedRecId = existing.all_day
+              ? recIdDate.toISOString().slice(0, 10).replace(/-/g, "")
+              : recIdDate
+                  .toISOString()
+                  .replace(/[-:]/g, "")
+                  .replace(/\.\d{3}/, "");
+            const exceptionRegex = new RegExp(
+              `BEGIN:VEVENT\\r?\\n(?:(?!BEGIN:VEVENT)[\\s\\S])*?RECURRENCE-ID[^:]*:${formattedRecId}[\\s\\S]*?END:VEVENT\\r?\\n?`,
+            );
+            updatedIcs = updatedIcs.replace(exceptionRegex, "");
 
             await service.updateEvent(args.calendar as string, args.uid as string, updatedIcs, {
               url: rawObj.url,
