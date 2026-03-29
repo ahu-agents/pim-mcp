@@ -422,6 +422,29 @@ export class CalDavService {
     }
   }
 
+  async fetchRawCalendarObject(
+    calendarId: string,
+    uid: string,
+  ): Promise<{ data: string; url: string; etag: string }> {
+    const { account, calendarName } = this.resolveAccount(calendarId);
+    try {
+      const client = await this.getClient(account);
+      const calendar = await this.findCalendar(client, calendarName, account.id);
+      const obj = await this.findCalendarObject(client, calendar, uid);
+      if (!obj.data || !obj.etag) {
+        throw new CalendarError(
+          `Calendar object for "${uid}" has no data or etag`,
+          ErrorCode.EVENT_NOT_FOUND,
+          uid,
+        );
+      }
+      return { data: obj.data, url: obj.url, etag: obj.etag };
+    } catch (error) {
+      if (error instanceof CalendarError) throw error;
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
   async findFreeSlots(
     calendarIds: string[],
     start: string,
