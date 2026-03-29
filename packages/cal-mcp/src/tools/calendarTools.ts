@@ -472,7 +472,14 @@ export async function handleCalendarTool(
         if (detailLevel === "full") {
           const fullEvents = [];
           for (const evt of events) {
-            fullEvents.push(await service.getEvent(evt.calendar_id, evt.uid));
+            const full = await service.getEvent(evt.calendar_id, evt.uid);
+            // Preserve occurrence-specific fields from the summary (expanded occurrence)
+            fullEvents.push({
+              ...full,
+              start: evt.start,
+              end: evt.end,
+              occurrence_date: evt.occurrence_date,
+            });
           }
           return ok({ events: fullEvents });
         }
@@ -508,7 +515,14 @@ export async function handleCalendarTool(
         if (detailLevel === "full") {
           const fullEvents = [];
           for (const evt of events) {
-            fullEvents.push(await service.getEvent(evt.calendar_id, evt.uid));
+            const full = await service.getEvent(evt.calendar_id, evt.uid);
+            // Preserve occurrence-specific fields from the summary (expanded occurrence)
+            fullEvents.push({
+              ...full,
+              start: evt.start,
+              end: evt.end,
+              occurrence_date: evt.occurrence_date,
+            });
           }
           return ok({ events: fullEvents });
         }
@@ -539,7 +553,14 @@ export async function handleCalendarTool(
         if (detailLevel === "full") {
           const fullEvents = [];
           for (const evt of summaryEvents) {
-            fullEvents.push(await service.getEvent(evt.calendar_id, evt.uid));
+            const full = await service.getEvent(evt.calendar_id, evt.uid);
+            // Preserve occurrence-specific fields from the summary (expanded occurrence)
+            fullEvents.push({
+              ...full,
+              start: evt.start,
+              end: evt.end,
+              occurrence_date: evt.occurrence_date,
+            });
           }
           const matched = fullEvents.filter((e) => {
             const title = e.title?.toLowerCase() ?? "";
