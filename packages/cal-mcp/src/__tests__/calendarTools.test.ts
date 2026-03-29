@@ -10,6 +10,7 @@ const mockService = {
   updateEvent: vi.fn(),
   deleteEvent: vi.fn(),
   findFreeSlots: vi.fn(),
+  fetchRawCalendarObject: vi.fn(),
 };
 
 describe("calendarTools", () => {
@@ -188,26 +189,18 @@ describe("calendarTools", () => {
       expect(parsed.message).toContain("Connection failed");
     });
 
-    it("update_event returns not_implemented for span this on recurring event", async () => {
-      mockService.getEventWithMeta.mockResolvedValue({
-        event: {
-          uid: "evt-1",
-          title: "Weekly",
-          is_recurring: true,
-          recurrence_rule: "FREQ=WEEKLY",
-        },
-        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
-      });
+    it("update_event schema has occurrence_date and span enum without future", () => {
+      const tool = CALENDAR_TOOLS.find((t) => t.name === "update_event")!;
+      const props = (tool.inputSchema as any).properties;
+      expect(props.occurrence_date).toBeDefined();
+      expect(props.span.enum).toEqual(["this", "all"]);
+    });
 
-      const result = await handleCalendarTool(
-        "update_event",
-        { calendar: "mailbox/Work", uid: "evt-1", title: "Changed", span: "this" },
-        mockService as any,
-      );
-
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toBe("not_implemented");
+    it("delete_event schema has occurrence_date and span enum without future", () => {
+      const tool = CALENDAR_TOOLS.find((t) => t.name === "delete_event")!;
+      const props = (tool.inputSchema as any).properties;
+      expect(props.occurrence_date).toBeDefined();
+      expect(props.span.enum).toEqual(["this", "all"]);
     });
 
     it("update_event succeeds with span this on non-recurring event", async () => {
@@ -343,6 +336,176 @@ describe("calendarTools", () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.slots).toHaveLength(1);
       expect(parsed.count).toBe(1);
+    });
+  });
+
+  describe("update_event span=this on recurring event", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("creates exception VEVENT when span=this on recurring event", async () => {
+      const masterIcs = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "BEGIN:VEVENT",
+        "UID:weekly",
+        "DTSTART:20260101T100000Z",
+        "DTEND:20260101T110000Z",
+        "RRULE:FREQ=WEEKLY;COUNT=52",
+        "SUMMARY:Standup",
+        "LOCATION:Room A",
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\r\n");
+
+      mockService.getEventWithMeta.mockResolvedValueOnce({
+        event: {
+          uid: "weekly",
+          title: "Standup",
+          is_recurring: true,
+          start: "2026-01-01T10:00:00.000Z",
+          end: "2026-01-01T11:00:00.000Z",
+          all_day: false,
+          location: "Room A",
+          recurrence_rule: "FREQ=WEEKLY;COUNT=52",
+          description: null,
+          attendees: [],
+          alarms: [],
+          categories: [],
+          geo: null,
+          organizer: null,
+          status: null,
+          availability: null,
+          url: null,
+          created: null,
+          last_modified: null,
+          calendar_id: "prov/Cal",
+          occurrence_date: null,
+        },
+        meta: { url: "/cal/weekly.ics", etag: '"etag-1"' },
+      });
+
+      mockService.fetchRawCalendarObject.mockResolvedValueOnce({
+        data: masterIcs,
+        url: "/cal/weekly.ics",
+        etag: '"etag-1"',
+      });
+
+      mockService.updateEvent.mockResolvedValueOnce({});
+
+      const result = await handleCalendarTool(
+        "update_event",
+        {
+          calendar: "prov/Cal",
+          uid: "weekly",
+          title: "Renamed Standup",
+          span: "this",
+          occurrence_date: "2026-03-05T10:00:00.000Z",
+        },
+        mockService as any,
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.event.title).toBe("Renamed Standup");
+
+      // Verify updateEvent was called with combined ICS containing RECURRENCE-ID
+      expect(mockService.updateEvent).toHaveBeenCalledWith(
+        "prov/Cal",
+        "weekly",
+        expect.stringContaining("RECURRENCE-ID"),
+        expect.objectContaining({ url: "/cal/weekly.ics" }),
+      );
+    });
+
+    it("returns error when span=this + recurring + no occurrence_date", async () => {
+      mockService.getEventWithMeta.mockResolvedValueOnce({
+        event: { uid: "weekly", is_recurring: true, all_day: false, occurrence_date: null },
+        meta: { url: "/cal/weekly.ics", etag: '"etag-1"' },
+      });
+
+      const result = await handleCalendarTool(
+        "update_event",
+        { calendar: "prov/Cal", uid: "weekly", title: "New Title", span: "this" },
+        mockService as any,
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("occurrence_date");
+    });
+  });
+
+  describe("delete_event span=this on recurring event", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("adds EXDATE when span=this on recurring event", async () => {
+      const masterIcs = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "BEGIN:VEVENT",
+        "UID:weekly",
+        "DTSTART:20260101T100000Z",
+        "DTEND:20260101T110000Z",
+        "RRULE:FREQ=WEEKLY;COUNT=52",
+        "SUMMARY:Standup",
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\r\n");
+
+      mockService.getEventWithMeta.mockResolvedValueOnce({
+        event: { uid: "weekly", is_recurring: true, all_day: false, occurrence_date: null },
+        meta: { url: "/cal/weekly.ics", etag: '"etag-1"' },
+      });
+
+      mockService.fetchRawCalendarObject.mockResolvedValueOnce({
+        data: masterIcs,
+        url: "/cal/weekly.ics",
+        etag: '"etag-1"',
+      });
+
+      mockService.updateEvent.mockResolvedValueOnce({});
+
+      const result = await handleCalendarTool(
+        "delete_event",
+        {
+          calendar: "prov/Cal",
+          uid: "weekly",
+          span: "this",
+          occurrence_date: "2026-03-05T10:00:00.000Z",
+        },
+        mockService as any,
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toBe(true);
+
+      // Verify updateEvent was called with ICS containing EXDATE
+      expect(mockService.updateEvent).toHaveBeenCalledWith(
+        "prov/Cal",
+        "weekly",
+        expect.stringContaining("EXDATE"),
+        expect.objectContaining({ url: "/cal/weekly.ics" }),
+      );
+    });
+
+    it("returns error when span=this + recurring + no occurrence_date", async () => {
+      mockService.getEventWithMeta.mockResolvedValueOnce({
+        event: { uid: "weekly", is_recurring: true, all_day: false, occurrence_date: null },
+        meta: { url: "/cal/weekly.ics", etag: '"etag-1"' },
+      });
+
+      const result = await handleCalendarTool(
+        "delete_event",
+        { calendar: "prov/Cal", uid: "weekly", span: "this" },
+        mockService as any,
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("occurrence_date");
     });
   });
 });

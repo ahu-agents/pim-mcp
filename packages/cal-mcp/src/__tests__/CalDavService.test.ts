@@ -1078,9 +1078,7 @@ describe("CalDavService", () => {
       ]);
       (parseIcsEvents as any).mockReturnValue([{ uid: "other-uid" }]);
 
-      await expect(
-        service.fetchRawCalendarObject("mailbox/Work", "nonexistent"),
-      ).rejects.toThrow();
+      await expect(service.fetchRawCalendarObject("mailbox/Work", "nonexistent")).rejects.toThrow();
     });
 
     it("throws CalendarError when object has no data", async () => {
@@ -1094,15 +1092,11 @@ describe("CalDavService", () => {
       // parseIcsEvents won't be called (obj.data is falsy, skipped in findCalendarObject)
       (parseIcsEvents as any).mockReturnValue([{ uid: "test-uid" }]);
 
-      await expect(
-        service.fetchRawCalendarObject("mailbox/Work", "test-uid"),
-      ).rejects.toThrow();
+      await expect(service.fetchRawCalendarObject("mailbox/Work", "test-uid")).rejects.toThrow();
     });
 
     it("throws for unknown provider", async () => {
-      await expect(
-        service.fetchRawCalendarObject("unknown/Work", "test-uid"),
-      ).rejects.toThrow();
+      await expect(service.fetchRawCalendarObject("unknown/Work", "test-uid")).rejects.toThrow();
     });
   });
 });

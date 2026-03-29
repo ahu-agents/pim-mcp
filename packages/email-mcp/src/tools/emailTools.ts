@@ -439,8 +439,18 @@ export async function handleEmailTool(
 
       case "send_email": {
         const to = Array.isArray(args.to) ? (args.to as string[]) : [args.to as string];
-        const cc = args.cc == null ? undefined : Array.isArray(args.cc) ? (args.cc as string[]) : [args.cc as string];
-        const bcc = args.bcc == null ? undefined : Array.isArray(args.bcc) ? (args.bcc as string[]) : [args.bcc as string];
+        const cc =
+          args.cc == null
+            ? undefined
+            : Array.isArray(args.cc)
+              ? (args.cc as string[])
+              : [args.cc as string];
+        const bcc =
+          args.bcc == null
+            ? undefined
+            : Array.isArray(args.bcc)
+              ? (args.bcc as string[])
+              : [args.bcc as string];
         const text = args.text as string | undefined;
         const html = args.html as string | undefined;
         const attachments = args.attachments as any[] | undefined;

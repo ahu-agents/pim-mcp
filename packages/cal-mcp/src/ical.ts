@@ -266,9 +266,7 @@ export function parseIcsEvents(
       // Non-recurring, or no range provided — return as-is
       // Detect RECURRENCE-ID for exception VEVENTs (node-ical exposes it as a Date)
       const recurrenceId = (vevent as any).recurrenceid;
-      const occDate = recurrenceId
-        ? formatTime(new Date(recurrenceId).toISOString())
-        : null;
+      const occDate = recurrenceId ? formatTime(new Date(recurrenceId).toISOString()) : null;
 
       events.push({
         ...baseProps,
@@ -365,7 +363,10 @@ export function createExceptionVevent(
   const formatIcalDate = (iso: string, isAllDay: boolean): string => {
     const d = new Date(iso);
     if (isAllDay) return d.toISOString().slice(0, 10).replace(/-/g, "");
-    return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    return d
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}/, "");
   };
 
   // Determine effective values (override or inherit)
@@ -432,10 +433,7 @@ export function createExceptionVevent(
   return lines.join("\r\n");
 }
 
-export function combineIcsComponents(
-  masterIcs: string,
-  exceptionVevent: string,
-): string {
+export function combineIcsComponents(masterIcs: string, exceptionVevent: string): string {
   let ics = masterIcs;
 
   // Extract RECURRENCE-ID from the new exception to find existing match
@@ -466,7 +464,10 @@ export function addExdateToIcs(
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
     exdateLine = `EXDATE;VALUE=DATE:${dateStr}`;
   } else {
-    const dtStr = date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const dtStr = date
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}/, "");
     exdateLine = `EXDATE:${dtStr}`;
   }
 

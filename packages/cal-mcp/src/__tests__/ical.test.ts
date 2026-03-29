@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { addExdateToIcs, combineIcsComponents, createExceptionVevent, generateEventIcs, parseIcsEvents } from "../ical.js";
+import {
+  addExdateToIcs,
+  combineIcsComponents,
+  createExceptionVevent,
+  generateEventIcs,
+  parseIcsEvents,
+} from "../ical.js";
 
 const SAMPLE_ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -808,9 +814,14 @@ describe("createExceptionVevent", () => {
   ].join("\r\n");
 
   it("creates exception VEVENT with RECURRENCE-ID and overridden title", () => {
-    const result = createExceptionVevent(masterIcs, "2026-03-05T10:00:00.000Z", {
-      title: "Special Standup",
-    }, false);
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        title: "Special Standup",
+      },
+      false,
+    );
     expect(result).toContain("BEGIN:VEVENT");
     expect(result).toContain("END:VEVENT");
     expect(result).toContain("UID:weekly-meeting");
@@ -821,35 +832,55 @@ describe("createExceptionVevent", () => {
   });
 
   it("overrides start and end times", () => {
-    const result = createExceptionVevent(masterIcs, "2026-03-05T10:00:00.000Z", {
-      start: "2026-03-05T14:00:00.000Z",
-      end: "2026-03-05T15:00:00.000Z",
-    }, false);
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        start: "2026-03-05T14:00:00.000Z",
+        end: "2026-03-05T15:00:00.000Z",
+      },
+      false,
+    );
     expect(result).toContain("DTSTART:20260305T140000Z");
     expect(result).toContain("DTEND:20260305T150000Z");
   });
 
   it("uses original occurrence time when start/end not overridden", () => {
-    const result = createExceptionVevent(masterIcs, "2026-03-05T10:00:00.000Z", {
-      title: "Renamed",
-    }, false);
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        title: "Renamed",
+      },
+      false,
+    );
     // Should use the occurrence date's time, not the master's original DTSTART
     expect(result).toContain("DTSTART:20260305T100000Z");
     expect(result).toContain("DTEND:20260305T110000Z");
   });
 
   it("handles all-day events with VALUE=DATE format", () => {
-    const result = createExceptionVevent(masterIcs, "2026-03-05", {
-      title: "All Day Exception",
-    }, true);
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05",
+      {
+        title: "All Day Exception",
+      },
+      true,
+    );
     expect(result).toContain("RECURRENCE-ID;VALUE=DATE:20260305");
     expect(result).toContain("DTSTART;VALUE=DATE:");
   });
 
   it("includes SEQUENCE property", () => {
-    const result = createExceptionVevent(masterIcs, "2026-03-05T10:00:00.000Z", {
-      title: "Updated",
-    }, false);
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        title: "Updated",
+      },
+      false,
+    );
     expect(result).toMatch(/SEQUENCE:\d+/);
   });
 });

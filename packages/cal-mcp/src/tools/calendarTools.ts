@@ -1,6 +1,12 @@
 import { getTimezone, toPimError } from "@miguelarios/pim-core";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { generateEventIcs, parseIcsEvents } from "../ical.js";
+import {
+  addExdateToIcs,
+  combineIcsComponents,
+  createExceptionVevent,
+  generateEventIcs,
+  parseIcsEvents,
+} from "../ical.js";
 import type { CalDavService, CalendarObjectMeta, EventSummary } from "../services/CalDavService.js";
 
 export const CALENDAR_TOOLS: Tool[] = [
@@ -228,10 +234,16 @@ export const CALENDAR_TOOLS: Tool[] = [
           items: { type: "string" },
           description: "Event categories/tags",
         },
+        occurrence_date: {
+          type: "string",
+          description:
+            "ISO 8601 date of the specific occurrence to modify. Required when span is 'this' on a recurring event. Get this value from list_events results.",
+        },
         span: {
           type: "string",
-          enum: ["this", "future", "all"],
-          description: "Recurring event scope (default: this)",
+          enum: ["this", "all"],
+          description:
+            "'this' modifies only this occurrence, 'all' modifies the entire series. Default: this.",
         },
       },
       required: ["calendar", "uid"],
@@ -251,10 +263,16 @@ export const CALENDAR_TOOLS: Tool[] = [
           type: "string",
           description: "Event UID to delete",
         },
+        occurrence_date: {
+          type: "string",
+          description:
+            "ISO 8601 date of the specific occurrence to delete. Required when span is 'this' on a recurring event. Get this value from list_events results.",
+        },
         span: {
           type: "string",
-          enum: ["this", "future", "all"],
-          description: "Recurring event scope (default: all)",
+          enum: ["this", "all"],
+          description:
+            "'this' deletes only this occurrence, 'all' deletes the entire series. Default: all.",
         },
       },
       required: ["calendar", "uid"],
@@ -573,11 +591,74 @@ export async function handleCalendarTool(
           args.uid as string,
         );
 
-        if (existing.is_recurring && (span === "this" || span === "future")) {
-          return error(
-            "not_implemented",
-            "Recurring event instance modification is not yet supported",
+        // span="this" on a recurring event: create exception VEVENT
+        if (existing.is_recurring && span === "this") {
+          const occurrenceDate = args.occurrence_date as string | undefined;
+          if (!occurrenceDate) {
+            return error(
+              "validation_error",
+              "occurrence_date is required when span is 'this' on a recurring event",
+            );
+          }
+
+          const rawObj = await service.fetchRawCalendarObject(
+            args.calendar as string,
+            args.uid as string,
           );
+
+          const overrides: {
+            title?: string;
+            start?: string;
+            end?: string;
+            all_day?: boolean;
+            location?: string;
+            description?: string;
+            attendees?: Array<{ email: string; name?: string }>;
+            alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
+            categories?: string[];
+          } = {};
+          if (args.title !== undefined) overrides.title = args.title as string;
+          if (args.start !== undefined) overrides.start = args.start as string;
+          if (args.end !== undefined) overrides.end = args.end as string;
+          if (args.all_day !== undefined) overrides.all_day = args.all_day as boolean;
+          if (args.location !== undefined) overrides.location = args.location as string;
+          if (args.description !== undefined) overrides.description = args.description as string;
+          if (args.attendees !== undefined)
+            overrides.attendees = args.attendees as Array<{ email: string; name?: string }>;
+          if (args.alarms !== undefined)
+            overrides.alarms = args.alarms as Array<{
+              type: "relative" | "absolute";
+              trigger: number | string;
+            }>;
+          if (args.categories !== undefined) overrides.categories = args.categories as string[];
+
+          const exceptionVevent = createExceptionVevent(
+            rawObj.data,
+            occurrenceDate,
+            overrides,
+            existing.all_day,
+          );
+          const combinedIcs = combineIcsComponents(rawObj.data, exceptionVevent);
+
+          await service.updateEvent(args.calendar as string, args.uid as string, combinedIcs, {
+            url: rawObj.url,
+            etag: rawObj.etag,
+          });
+
+          // Build response from overrides + existing
+          const responseEvent = {
+            uid: existing.uid,
+            title: overrides.title ?? existing.title,
+            start: overrides.start ?? occurrenceDate,
+            end: overrides.end ?? existing.end,
+            all_day: overrides.all_day ?? existing.all_day,
+            location: overrides.location ?? existing.location,
+            description: overrides.description ?? existing.description,
+            is_recurring: true,
+            occurrence_date: occurrenceDate,
+            calendar_id: args.calendar as string,
+          };
+          return ok({ event: responseEvent });
         }
 
         const icsString = generateEventIcs({
@@ -613,21 +694,44 @@ export async function handleCalendarTool(
 
       case "delete_event": {
         const span = (args.span as string) ?? "all";
-        let meta: CalendarObjectMeta | undefined;
-        if (span === "this" || span === "future") {
-          const result = await service.getEventWithMeta(
+
+        // span="this" on a recurring event: add EXDATE to exclude this occurrence
+        if (span === "this") {
+          const { event: existing, meta: eventMeta } = await service.getEventWithMeta(
             args.calendar as string,
             args.uid as string,
           );
-          if (result.event.is_recurring) {
-            return error(
-              "not_implemented",
-              "Recurring event instance deletion is not yet supported",
+
+          if (existing.is_recurring) {
+            const occurrenceDate = args.occurrence_date as string | undefined;
+            if (!occurrenceDate) {
+              return error(
+                "validation_error",
+                "occurrence_date is required when span is 'this' on a recurring event",
+              );
+            }
+
+            const rawObj = await service.fetchRawCalendarObject(
+              args.calendar as string,
+              args.uid as string,
             );
+
+            const updatedIcs = addExdateToIcs(rawObj.data, occurrenceDate, existing.all_day);
+
+            await service.updateEvent(args.calendar as string, args.uid as string, updatedIcs, {
+              url: rawObj.url,
+              etag: rawObj.etag,
+            });
+            return ok({ deleted: true, uid: args.uid });
           }
-          meta = result.meta;
+
+          // Non-recurring with span="this" — just delete normally
+          await service.deleteEvent(args.calendar as string, args.uid as string, eventMeta);
+          return ok({ deleted: true, uid: args.uid });
         }
-        await service.deleteEvent(args.calendar as string, args.uid as string, meta);
+
+        // span="all" — delete the entire calendar object
+        await service.deleteEvent(args.calendar as string, args.uid as string);
         return ok({ deleted: true, uid: args.uid });
       }
 
