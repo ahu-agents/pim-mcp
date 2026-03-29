@@ -515,6 +515,69 @@ describe("recurrence expansion", () => {
     expect(events).toHaveLength(1);
     expect(events[0].start).toBe("2026-03-10T14:00:00.000Z");
   });
+
+  it("sets occurrence_date on expanded recurring instances", () => {
+    const events = parseIcsEvents(weeklyIcs, {
+      start: "2026-03-01T00:00:00Z",
+      end: "2026-03-15T00:00:00Z",
+    });
+    expect(events.length).toBe(2);
+    for (const evt of events) {
+      expect(evt.occurrence_date).toBe(evt.start);
+    }
+  });
+
+  it("sets occurrence_date to null for non-recurring events", () => {
+    const singleIcs = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:single-event",
+      "DTSTART:20260310T140000Z",
+      "DTEND:20260310T150000Z",
+      "SUMMARY:One-off",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(singleIcs);
+    expect(events[0].occurrence_date).toBeNull();
+  });
+
+  it("sets occurrence_date to null for master event (no range)", () => {
+    const events = parseIcsEvents(weeklyIcs);
+    expect(events[0].occurrence_date).toBeNull();
+  });
+
+  it("sets occurrence_date from RECURRENCE-ID on exception VEVENTs", () => {
+    // Note: node-ical uses UID as object key, so exception VEVENTs must have a
+    // distinct key to be independently accessible. In practice, CalDAV servers
+    // store exceptions as separate .ics objects (separate fetchCalendarObjects
+    // results), each with a unique URL but the same UID. We simulate that here
+    // by giving the exception a unique UID so node-ical doesn't collapse it.
+    const icsWithException = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:weekly-meeting",
+      "DTSTART:20260101T100000Z",
+      "DTEND:20260101T110000Z",
+      "RRULE:FREQ=WEEKLY;COUNT=52",
+      "SUMMARY:Weekly Standup",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:weekly-meeting-exception-20260305",
+      "RECURRENCE-ID:20260305T100000Z",
+      "DTSTART:20260305T140000Z",
+      "DTEND:20260305T150000Z",
+      "SUMMARY:Rescheduled Standup",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(icsWithException);
+    const exception = events.find((e) => e.title === "Rescheduled Standup");
+    expect(exception).toBeDefined();
+    expect(exception!.occurrence_date).toBe("2026-03-05T10:00:00.000Z");
+  });
 });
 
 describe("generateEventIcs", () => {

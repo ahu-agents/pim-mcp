@@ -30,6 +30,7 @@ export interface EventSummary {
   location: string | null;
   status: string | null;
   is_recurring: boolean;
+  occurrence_date: string | null;
 }
 
 export interface EventFull extends EventSummary {
@@ -245,6 +246,7 @@ export class CalDavService {
             location: event.location,
             status: event.status,
             is_recurring: event.is_recurring,
+            occurrence_date: event.occurrence_date,
           });
         }
       }
@@ -628,6 +630,7 @@ export class CalDavService {
       location: event.location,
       status: event.status,
       is_recurring: event.is_recurring,
+      occurrence_date: event.occurrence_date,
       description: event.description,
       url: event.url,
       availability: event.availability,

@@ -34,6 +34,7 @@ export interface ParsedEvent {
   last_modified: string | null;
   is_recurring: boolean;
   alarms: ParsedAlarm[];
+  occurrence_date: string | null;
 }
 
 export interface TimeRange {
@@ -218,7 +219,7 @@ export function parseIcsEvents(
     }
 
     // Build base properties shared by all occurrences
-    const baseProps: Omit<ParsedEvent, "start" | "end"> = {
+    const baseProps: Omit<ParsedEvent, "start" | "end" | "occurrence_date"> = {
       uid: vevent.uid || "",
       title: vevent.summary || "",
       all_day: allDay,
@@ -258,14 +259,22 @@ export function parseIcsEvents(
           ...baseProps,
           start: formatTime(occStart.toISOString()),
           end: formatTime(occEnd.toISOString()),
+          occurrence_date: formatTime(occStart.toISOString()),
         });
       }
     } else {
       // Non-recurring, or no range provided — return as-is
+      // Detect RECURRENCE-ID for exception VEVENTs (node-ical exposes it as a Date)
+      const recurrenceId = (vevent as any).recurrenceid;
+      const occDate = recurrenceId
+        ? formatTime(new Date(recurrenceId).toISOString())
+        : null;
+
       events.push({
         ...baseProps,
         start: vevent.start ? formatTime(new Date(vevent.start).toISOString()) : "",
         end: vevent.end ? formatTime(new Date(vevent.end).toISOString()) : "",
+        occurrence_date: occDate,
       });
     }
   }
