@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateEventIcs, parseIcsEvents } from "../ical.js";
+import { addExdateToIcs, generateEventIcs, parseIcsEvents } from "../ical.js";
 
 const SAMPLE_ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -739,5 +739,55 @@ describe("generateEventIcs", () => {
       });
       expect(ics).toContain("20260314T150000Z");
     });
+  });
+});
+
+describe("addExdateToIcs", () => {
+  const masterIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "DTSTART:20260101T100000Z",
+    "DTEND:20260101T110000Z",
+    "RRULE:FREQ=WEEKLY;COUNT=52",
+    "SUMMARY:Weekly Standup",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  it("inserts EXDATE line for a timed event", () => {
+    const result = addExdateToIcs(masterIcs, "2026-03-05T10:00:00.000Z", false);
+    expect(result).toContain("EXDATE:20260305T100000Z");
+    expect(result).toContain("END:VEVENT");
+    // EXDATE should be before END:VEVENT
+    const exdateIdx = result.indexOf("EXDATE:20260305T100000Z");
+    const endIdx = result.indexOf("END:VEVENT");
+    expect(exdateIdx).toBeLessThan(endIdx);
+  });
+
+  it("inserts EXDATE with VALUE=DATE for all-day events", () => {
+    const allDayIcs = masterIcs.replace(
+      "DTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z",
+      "DTSTART;VALUE=DATE:20260101\r\nDTEND;VALUE=DATE:20260102",
+    );
+    const result = addExdateToIcs(allDayIcs, "2026-03-05", true);
+    expect(result).toContain("EXDATE;VALUE=DATE:20260305");
+  });
+
+  it("is idempotent — does not add duplicate EXDATE", () => {
+    const first = addExdateToIcs(masterIcs, "2026-03-05T10:00:00.000Z", false);
+    const second = addExdateToIcs(first, "2026-03-05T10:00:00.000Z", false);
+    const count = (second.match(/EXDATE/g) || []).length;
+    expect(count).toBe(1);
+  });
+
+  it("preserves all other ICS content", () => {
+    const result = addExdateToIcs(masterIcs, "2026-03-05T10:00:00.000Z", false);
+    expect(result).toContain("UID:weekly-meeting");
+    expect(result).toContain("RRULE:FREQ=WEEKLY;COUNT=52");
+    expect(result).toContain("SUMMARY:Weekly Standup");
+    expect(result).toContain("BEGIN:VCALENDAR");
+    expect(result).toContain("END:VCALENDAR");
   });
 });

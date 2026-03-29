@@ -336,3 +336,28 @@ export function generateEventIcs(props: EventCreateProps): string {
 
   return icsString;
 }
+
+export function addExdateToIcs(
+  icsContent: string,
+  occurrenceDate: string,
+  allDay: boolean,
+): string {
+  // Format the EXDATE value
+  const date = new Date(occurrenceDate);
+  let exdateLine: string;
+  if (allDay) {
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
+    exdateLine = `EXDATE;VALUE=DATE:${dateStr}`;
+  } else {
+    const dtStr = date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    exdateLine = `EXDATE:${dtStr}`;
+  }
+
+  // Check for existing EXDATE with same date (idempotency)
+  if (icsContent.includes(exdateLine)) {
+    return icsContent;
+  }
+
+  // Insert before the first END:VEVENT
+  return icsContent.replace("END:VEVENT", `${exdateLine}\r\nEND:VEVENT`);
+}
