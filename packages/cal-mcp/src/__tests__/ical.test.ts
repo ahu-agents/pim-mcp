@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addExdateToIcs, createExceptionVevent, generateEventIcs, parseIcsEvents } from "../ical.js";
+import { addExdateToIcs, combineIcsComponents, createExceptionVevent, generateEventIcs, parseIcsEvents } from "../ical.js";
 
 const SAMPLE_ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -851,5 +851,67 @@ describe("createExceptionVevent", () => {
       title: "Updated",
     }, false);
     expect(result).toMatch(/SEQUENCE:\d+/);
+  });
+});
+
+describe("combineIcsComponents", () => {
+  const masterIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "DTSTART:20260101T100000Z",
+    "DTEND:20260101T110000Z",
+    "RRULE:FREQ=WEEKLY;COUNT=52",
+    "SUMMARY:Weekly Standup",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  const exceptionVevent = [
+    "BEGIN:VEVENT",
+    "UID:weekly-meeting",
+    "RECURRENCE-ID:20260305T100000Z",
+    "DTSTART:20260305T140000Z",
+    "DTEND:20260305T150000Z",
+    "SUMMARY:Rescheduled Standup",
+    "END:VEVENT",
+  ].join("\r\n");
+
+  it("inserts exception VEVENT before END:VCALENDAR", () => {
+    const result = combineIcsComponents(masterIcs, exceptionVevent);
+    expect(result).toContain("RECURRENCE-ID:20260305T100000Z");
+    expect(result).toContain("SUMMARY:Rescheduled Standup");
+    // Both VEVENTs present
+    const veventCount = (result.match(/BEGIN:VEVENT/g) || []).length;
+    expect(veventCount).toBe(2);
+    // Ends with END:VCALENDAR
+    expect(result.trimEnd()).toMatch(/END:VCALENDAR$/);
+  });
+
+  it("removes existing exception with same RECURRENCE-ID before inserting", () => {
+    // First combine
+    const first = combineIcsComponents(masterIcs, exceptionVevent);
+    // Second combine with updated exception
+    const updatedException = exceptionVevent.replace(
+      "SUMMARY:Rescheduled Standup",
+      "SUMMARY:Updated Standup",
+    );
+    const result = combineIcsComponents(first, updatedException);
+    // Should have exactly 2 VEVENTs (master + new exception), not 3
+    const veventCount = (result.match(/BEGIN:VEVENT/g) || []).length;
+    expect(veventCount).toBe(2);
+    expect(result).toContain("SUMMARY:Updated Standup");
+    expect(result).not.toContain("SUMMARY:Rescheduled Standup");
+  });
+
+  it("preserves VTIMEZONE and other components", () => {
+    const icsWithTz = masterIcs.replace(
+      "BEGIN:VEVENT",
+      "BEGIN:VTIMEZONE\r\nTZID:America/Chicago\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT",
+    );
+    const result = combineIcsComponents(icsWithTz, exceptionVevent);
+    expect(result).toContain("VTIMEZONE");
+    expect(result).toContain("TZID:America/Chicago");
   });
 });

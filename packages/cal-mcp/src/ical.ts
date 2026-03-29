@@ -432,6 +432,28 @@ export function createExceptionVevent(
   return lines.join("\r\n");
 }
 
+export function combineIcsComponents(
+  masterIcs: string,
+  exceptionVevent: string,
+): string {
+  let ics = masterIcs;
+
+  // Extract RECURRENCE-ID from the new exception to find existing match
+  const recIdMatch = exceptionVevent.match(/RECURRENCE-ID[^:]*:(.+)/);
+  if (recIdMatch) {
+    const recIdValue = recIdMatch[1].trim();
+    // Remove any existing exception VEVENT with the same RECURRENCE-ID
+    // Match from BEGIN:VEVENT through END:VEVENT that contains this RECURRENCE-ID
+    const regex = new RegExp(
+      `BEGIN:VEVENT\\r?\\n(?:(?!BEGIN:VEVENT)[\\s\\S])*?RECURRENCE-ID[^:]*:${recIdValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]*?END:VEVENT\\r?\\n?`,
+    );
+    ics = ics.replace(regex, "");
+  }
+
+  // Insert exception VEVENT before END:VCALENDAR
+  return ics.replace("END:VCALENDAR", `${exceptionVevent}\r\nEND:VCALENDAR`);
+}
+
 export function addExdateToIcs(
   icsContent: string,
   occurrenceDate: string,
