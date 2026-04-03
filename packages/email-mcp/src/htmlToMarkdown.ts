@@ -1,45 +1,53 @@
 import { appendFileSync } from "node:fs";
+import URLCleaner from "@backrunner/url-cleaner";
 import sanitize from "sanitize-html";
 import TurndownService from "turndown";
 
-const TRACKING_PARAMS = new Set([
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "utm_content",
-  "utm_term",
-  "campaign_id",
-  "emc",
-  "instance_id",
-  "nl",
-  "regi_id",
-  "segment_id",
-  "user_id",
-  "fbclid",
-  "gclid",
-  "mc_cid",
-  "mc_eid",
-  "__s",
-  "_hsenc",
-  "_hsmi",
-  "mkt_tok",
-]);
+// Supplemental tracking params not covered by uBlock/AdGuard lists
+const SUPPLEMENTAL_TRACKING_PARAMS = ["_ke", "sc_cid", "campaign_id"];
 
-export function cleanUrl(urlStr: string): string {
+// Lazy-init singleton — constructed on first use, reused thereafter
+let cleanerInstance: URLCleaner | null = null;
+
+function getCleaner(): URLCleaner {
+  if (!cleanerInstance) {
+    cleanerInstance = new URLCleaner({ useDefaultLists: true });
+  }
+  return cleanerInstance;
+}
+
+export async function disposeUrlCleaner(): Promise<void> {
+  if (cleanerInstance) {
+    await cleanerInstance.dispose();
+    cleanerInstance = null;
+  }
+}
+
+function stripSupplementalParams(urlStr: string): string {
   try {
     const url = new URL(urlStr);
     let removed = false;
-    for (const key of [...url.searchParams.keys()]) {
-      if (TRACKING_PARAMS.has(key)) {
+    for (const key of SUPPLEMENTAL_TRACKING_PARAMS) {
+      if (url.searchParams.has(key)) {
         url.searchParams.delete(key);
         removed = true;
       }
     }
-    if (!removed) return urlStr;
-    return url.toString();
+    return removed ? url.toString() : urlStr;
   } catch {
     return urlStr;
   }
+}
+
+export async function cleanUrl(urlStr: string): Promise<string> {
+  try {
+    new URL(urlStr);
+  } catch {
+    return urlStr;
+  }
+  const cleaner = getCleaner();
+  const result = await cleaner.cleanURLWithResult(urlStr);
+  return stripSupplementalParams(result.url);
 }
 
 function isHiddenElement(style: string): boolean {
@@ -157,10 +165,18 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   }
 
   // Step 5: Strip tracking params from all URLs
-  markdown = markdown.replace(/\(https?:\/\/[^)]+\)/g, (match) => {
-    const url = match.slice(1, -1); // remove parens
-    return `(${cleanUrl(url)})`;
-  });
+  const paramPattern = /\(https?:\/\/[^)]+\)/g;
+  const paramMatches = [...markdown.matchAll(paramPattern)];
+  if (paramMatches.length > 0) {
+    const urls = [...new Set(paramMatches.map((m) => m[0].slice(1, -1)))];
+    const cleaned = await Promise.all(urls.map((u) => cleanUrl(u)));
+    const urlMap = new Map(urls.map((u, i) => [u, cleaned[i]]));
+    for (const [original, clean] of urlMap) {
+      if (original !== clean) {
+        markdown = markdown.replaceAll(original, clean);
+      }
+    }
+  }
 
   // Step 6: Post-process — collapse excessive newlines
   markdown = markdown.replace(/\n{3,}/g, "\n\n").trim();

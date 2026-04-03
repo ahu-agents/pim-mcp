@@ -1,41 +1,63 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanUrl, htmlToMarkdown } from "../htmlToMarkdown.js";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanUrl, disposeUrlCleaner, htmlToMarkdown } from "../htmlToMarkdown.js";
 
 describe("cleanUrl", () => {
-  it("strips utm params", () => {
+  it("strips utm params", async () => {
     const url =
       "https://example.com/page?utm_source=email&utm_medium=newsletter&utm_campaign=spring&id=42";
-    expect(cleanUrl(url)).toBe("https://example.com/page?id=42");
+    const result = await cleanUrl(url);
+    expect(result).toBe("https://example.com/page?id=42");
   });
 
-  it("strips all known tracking params", () => {
-    const url =
-      "https://example.com/?campaign_id=58&emc=edit&instance_id=123&nl=cooking&regi_id=456&segment_id=789&user_id=abc&fbclid=fb1&gclid=gc1&mc_cid=mc1&mc_eid=me1&__s=s1&_hsenc=hs1&_hsmi=hm1&mkt_tok=mt1&keep=yes";
-    expect(cleanUrl(url)).toBe("https://example.com/?keep=yes");
+  it("strips Klaviyo _kx param", async () => {
+    const url = "https://cdn.shopify.com/recipe.pdf?v=1773944942&_kx=BQ9YKnD8Hac1eUYa5CUsKsPXk0t1";
+    const result = await cleanUrl(url);
+    expect(result).toBe("https://cdn.shopify.com/recipe.pdf?v=1773944942");
   });
 
-  it("preserves functional params like Google Calendar", () => {
+  it("strips Google Ads srsltid param", async () => {
+    const url = "https://stealthhealthcontainers.com/?srsltid=AfmBOoqhC98&_kx=BQ9YKnD8Hac1";
+    const result = await cleanUrl(url);
+    expect(result).toBe("https://stealthhealthcontainers.com/");
+  });
+
+  it("strips supplemental params _ke and sc_cid", async () => {
+    const url = "https://example.com/page?_ke=abc123&sc_cid=snap456&id=42";
+    const result = await cleanUrl(url);
+    expect(result).toBe("https://example.com/page?id=42");
+  });
+
+  it("strips fbclid and gclid", async () => {
+    const url = "https://example.com/?fbclid=fb1&gclid=gc1&keep=yes";
+    const result = await cleanUrl(url);
+    expect(result).toBe("https://example.com/?keep=yes");
+  });
+
+  it("strips HubSpot and Marketo params", async () => {
+    const url = "https://example.com/?_hsenc=hs1&_hsmi=hm1&mkt_tok=mt1&keep=yes";
+    const result = await cleanUrl(url);
+    expect(result).toBe("https://example.com/?keep=yes");
+  });
+
+  it("preserves functional params like Google Calendar", async () => {
     const url =
       "https://calendar.google.com/calendar/event?action=RESPOND&eid=abc123&rst=1&tok=xyz789&ctz=America%2FLos_Angeles&hl=en&es=0";
-    expect(cleanUrl(url)).toBe(url);
+    const result = await cleanUrl(url);
+    expect(result).toBe(url);
   });
 
-  it("returns malformed URLs as-is", () => {
-    expect(cleanUrl("not-a-url")).toBe("not-a-url");
-    expect(cleanUrl("")).toBe("");
+  it("returns malformed URLs as-is", async () => {
+    expect(await cleanUrl("not-a-url")).toBe("not-a-url");
+    expect(await cleanUrl("")).toBe("");
   });
 
-  it("removes trailing ? when all params are stripped", () => {
-    const url = "https://example.com/?utm_source=email";
-    expect(cleanUrl(url)).toBe("https://example.com/");
-  });
-
-  it("handles URLs with no query params", () => {
+  it("handles URLs with no query params", async () => {
     const url = "https://example.com/page";
-    expect(cleanUrl(url)).toBe("https://example.com/page");
+    const result = await cleanUrl(url);
+    expect(result).toBe("https://example.com/page");
   });
 });
 
@@ -44,6 +66,10 @@ const mockFetch = vi.fn().mockImplementation(async (url: string) => ({
   url, // by default, "no redirect" — resolved URL equals input
 }));
 vi.stubGlobal("fetch", mockFetch);
+
+afterAll(async () => {
+  await disposeUrlCleaner();
+});
 
 describe("htmlToMarkdown", () => {
   beforeEach(() => {
