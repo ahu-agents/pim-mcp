@@ -1,7 +1,7 @@
 # URL Resolution & Tracking Parameter Cleanup — Design Spec
 
 **Date:** April 2, 2026
-**Status:** Draft
+**Status:** Implemented (email-mcp@0.9.0)
 **Scope:** `@miguelarios/email-mcp` — Fix click-tracker URL resolution, replace hand-rolled param stripping with community-maintained filter lists
 **Changes:** 2 behavioral changes in `htmlToMarkdown.ts`, 1 new dependency, 1 lifecycle recommendation
 

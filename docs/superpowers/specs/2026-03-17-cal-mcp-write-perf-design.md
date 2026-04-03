@@ -1,5 +1,7 @@
 # cal-mcp Write Path Performance Optimization
 
+**Status:** Implemented (cal-mcp@0.5.0)
+
 ## Problem
 
 The `update_event` tool times out after 90s on Mailbox.org's CalDAV server (via MCPorter). The current implementation makes 7 network round trips for a single update — many redundant. `createEvent` has similar inefficiency (4 calls), and `deleteEvent` costs 3 calls.

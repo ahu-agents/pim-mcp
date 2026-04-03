@@ -1,7 +1,7 @@
 # cal-mcp Recurring Event Instance Operations
 
 **Date:** 2026-03-24
-**Status:** Approved
+**Status:** Implemented (cal-mcp@0.7.0)
 **Scope:** `@miguelarios/cal-mcp` — Add single-instance update/delete for recurring events
 **Changes:** 2 enhanced tools (`update_event`, `delete_event`), response schema additions, ICS manipulation infrastructure
 

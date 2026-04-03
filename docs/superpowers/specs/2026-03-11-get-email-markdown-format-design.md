@@ -1,5 +1,7 @@
 # get_email Markdown Format — Design Spec
 
+**Status:** Implemented (email-mcp@0.3.0)
+
 ## Problem
 
 The `get_email` tool returns both `textBody` and `htmlBody`, consuming excessive tokens. A real-world NYT Cooking newsletter produces ~47K tokens. The `htmlBody` alone is 65KB of template HTML where 75.8% of the converted output is bloated redirect/tracking URLs (up to 597 chars each).

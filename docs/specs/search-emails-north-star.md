@@ -1,5 +1,7 @@
 # search_emails North Star Spec
 
+**Status:** Partially implemented (email-mcp@0.6.0 — sort, tokenized search, NOT prefix)
+
 > This is the target spec for the fully-featured search_emails tool.
 > We iterate toward this incrementally. See roadmap at the bottom.
 

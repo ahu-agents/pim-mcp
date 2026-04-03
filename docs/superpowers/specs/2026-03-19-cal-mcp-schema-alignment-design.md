@@ -1,6 +1,7 @@
 # cal-mcp Schema Alignment with macos-calendar-mcp
 
 **Date:** 2026-03-19
+**Status:** Implemented (cal-mcp@0.6.0)
 **Scope:** packages/cal-mcp (no pim-core changes)
 **Goal:** Add missing iCal/CalDAV data fields so cal-mcp and macos-calendar-mcp return interchangeable responses from an agent's perspective.
 

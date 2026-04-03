@@ -1,6 +1,7 @@
 # Email-MCP Timezone Conversion — Design Spec
 
 **Date:** 2026-04-02
+**Status:** Implemented (email-mcp@0.8.0)
 **Scope:** Read-path only — convert UTC email dates to user's local timezone
 
 ## Problem

@@ -1,5 +1,7 @@
 # URL Resolution Concurrency Throttling
 
+**Status:** Implemented (email-mcp@0.4.0)
+
 ## Problem
 
 `resolveUrls()` in `packages/email-mcp/src/htmlToMarkdown.ts` fires all URL HEAD requests simultaneously via `Promise.allSettled`. When an email contains many redirect URLs (e.g., 42 for NYT newsletters), network saturation and redirect-service throttling cause ~50% of requests to time out at 10s.

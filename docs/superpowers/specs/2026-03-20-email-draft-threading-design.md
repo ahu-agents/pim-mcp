@@ -1,7 +1,7 @@
 # Email Draft, Threading & Sent Folder — Design Spec
 
 **Date:** March 20, 2026
-**Status:** Approved
+**Status:** Implemented (email-mcp@0.7.0)
 **Scope:** `@miguelarios/email-mcp` — Add draft management, reply threading, and Sent folder copy
 **Changes:** 1 new tool (`send_draft`), 2 enhanced tools (`send_email`, `get_email`)
 

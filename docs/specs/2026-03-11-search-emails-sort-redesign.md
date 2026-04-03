@@ -1,5 +1,7 @@
 # search_emails: IMAP SORT + Structured Params Redesign
 
+**Status:** Implemented (email-mcp@0.2.0)
+
 ## Summary
 
 Redesign the `list_emails` tool (renamed `search_emails`) with two improvements:
