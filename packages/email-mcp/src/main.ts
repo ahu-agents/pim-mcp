@@ -2,6 +2,7 @@ import { loadEmailConfig } from "@miguelarios/pim-core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { disposeUrlCleaner } from "./htmlToMarkdown.js";
 import { ImapService } from "./services/ImapService.js";
 import { SmtpService } from "./services/SmtpService.js";
 import { EMAIL_TOOLS, handleEmailTool } from "./tools/emailTools.js";
@@ -26,6 +27,7 @@ export async function createServer(): Promise<Server> {
   });
 
   const handleShutdown = async () => {
+    await disposeUrlCleaner();
     process.exit(0);
   };
   process.on("SIGINT", handleShutdown);
