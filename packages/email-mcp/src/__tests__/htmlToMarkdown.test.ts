@@ -425,6 +425,15 @@ describe("htmlToMarkdown", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it("uses GET method for URL resolution", async () => {
+    mockFetch.mockResolvedValue({ url: "https://resolved.example.com/page" });
+    await htmlToMarkdown('<a href="https://tracker.example.com/click">Link</a>');
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://tracker.example.com/click",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("dramatically reduces NYT newsletter size", async () => {
     const fixturePath = resolve(__dirname, "__fixtures__/nyt-example.html");
     const html = readFileSync(fixturePath, "utf-8");

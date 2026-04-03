@@ -187,14 +187,15 @@ async function fetchOne(
   const start = Date.now();
   try {
     const res = await fetch(url, {
-      method: "HEAD",
+      method: "GET",
       redirect: "follow",
       signal: controller.signal,
     });
     clearTimeout(timer);
+    controller.abort();
     const elapsed = Date.now() - start;
     if (url !== res.url) {
-      log(`HEAD ${url} → ${res.url} (${elapsed}ms)`);
+      log(`RESOLVE ${url} → ${res.url} (${elapsed}ms)`);
     }
     return { url, resolved: res.url, status: "ok" };
   } catch (err) {
