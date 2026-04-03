@@ -1,4 +1,11 @@
-import { type EmailConfig, EmailError, ErrorCode, toPimError } from "@miguelarios/pim-core";
+import {
+  type EmailConfig,
+  EmailError,
+  ErrorCode,
+  formatInTimezone,
+  getTimezone,
+  toPimError,
+} from "@miguelarios/pim-core";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { type SearchParams, buildSearchCriteria } from "../search.js";
@@ -51,9 +58,11 @@ export interface SearchOptions {
 
 export class ImapService {
   private config: EmailConfig;
+  private timezone: string;
 
   constructor(config: EmailConfig) {
     this.config = config;
+    this.timezone = getTimezone();
   }
 
   private createClient(): ImapFlow {
@@ -176,7 +185,7 @@ export class ImapService {
           name: a.name,
           address: a.address || "",
         })),
-        date: envelope.date?.toISOString() || "",
+        date: envelope.date ? formatInTimezone(envelope.date.toISOString(), this.timezone) : "",
         flags: [...(msg.flags || [])],
         hasAttachments: hasAttachmentParts(msg.bodyStructure),
       });
@@ -219,7 +228,7 @@ export class ImapService {
             (Array.isArray(parsed.cc) ? parsed.cc : parsed.cc ? [parsed.cc] : [])
               .flatMap((addr) => addr.value)
               .map((a: any) => ({ name: a.name, address: a.address || "" })) || undefined,
-          date: parsed.date?.toISOString() || "",
+          date: parsed.date ? formatInTimezone(parsed.date.toISOString(), this.timezone) : "",
           flags: [],
           hasAttachments: (parsed.attachments?.length || 0) > 0,
           textBody: parsed.text || undefined,

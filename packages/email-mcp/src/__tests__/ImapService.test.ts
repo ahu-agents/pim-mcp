@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImapService } from "../services/ImapService.js";
 
 // Mock imapflow
@@ -847,6 +847,60 @@ describe("ImapService", () => {
       mockFetchOne.mockResolvedValueOnce(null);
 
       await expect(service.fetchRawSource("INBOX", 999)).rejects.toThrow("not found");
+    });
+  });
+
+  describe("timezone formatting", () => {
+    const originalTz = process.env.PIM_TIMEZONE;
+
+    beforeAll(() => {
+      process.env.PIM_TIMEZONE = "America/Chicago";
+    });
+
+    afterAll(() => {
+      if (originalTz !== undefined) {
+        process.env.PIM_TIMEZONE = originalTz;
+      } else {
+        delete process.env.PIM_TIMEZONE;
+      }
+    });
+
+    it("formats searchEmails dates in user timezone", async () => {
+      mockSearch.mockResolvedValueOnce([101]);
+
+      const messages = [
+        {
+          uid: 101,
+          envelope: {
+            messageId: "<msg-tz@test.com>",
+            subject: "TZ Test",
+            from: [{ address: "a@test.com", name: "A" }],
+            to: [{ address: "b@test.com", name: "B" }],
+            date: new Date("2026-03-04T18:00:00Z"),
+          },
+          flags: new Set([]),
+          bodyStructure: { type: "text/plain" },
+        },
+      ];
+      mockFetch.mockReturnValueOnce(
+        (async function* () {
+          for (const msg of messages) yield msg;
+        })(),
+      );
+
+      const results = await service.searchEmails("INBOX", {}, { limit: 10 });
+      expect(results[0].date).toBe("2026-03-04T12:00:00-06:00");
+    });
+
+    it("formats fetchEmail dates in user timezone", async () => {
+      mockFetchOne.mockResolvedValueOnce({
+        source: Buffer.from("raw email source"),
+      });
+
+      const results = await service.fetchEmail("INBOX", 1);
+      // Default mock has date: new Date("2026-03-04T12:00:00Z")
+      // America/Chicago in March (CST) = UTC-6
+      expect(results.date).toBe("2026-03-04T06:00:00-06:00");
     });
   });
 
