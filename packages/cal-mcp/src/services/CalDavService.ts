@@ -347,14 +347,12 @@ export class CalDavService {
 
     try {
       const client = await this.getClient(account);
-      const objUrl = meta?.url;
-      const objEtag = meta?.etag;
 
       let url: string;
       let etag: string | undefined;
-      if (objUrl) {
-        url = objUrl;
-        etag = objEtag;
+      if (meta?.url) {
+        url = meta.url;
+        etag = meta.etag;
       } else {
         const calendar = await this.findCalendar(client, calendarName, account.id);
         const obj = await this.findCalendarObject(client, calendar, uid);
@@ -362,9 +360,23 @@ export class CalDavService {
         etag = obj.etag;
       }
 
-      const response = await client.updateCalendarObject({
+      let response = await client.updateCalendarObject({
         calendarObject: { url, etag, data: icalString },
       });
+
+      // On 412 Precondition Failed, the server's etag has changed between our read
+      // and our PUT. This can happen from server-side ICS normalization, concurrent
+      // edits, or weak/strong etag drift. Refetch the current etag and retry once.
+      if ((response as any).status === 412) {
+        const calendar = await this.findCalendar(client, calendarName, account.id);
+        const obj = await this.findCalendarObject(client, calendar, uid);
+        url = obj.url;
+        etag = obj.etag;
+        response = await client.updateCalendarObject({
+          calendarObject: { url, etag, data: icalString },
+        });
+      }
+
       if (!(response as any).ok) {
         throw new CalendarError(
           `Failed to update event: ${(response as any).status} ${(response as any).statusText}`,
@@ -405,9 +417,23 @@ export class CalDavService {
         etag = obj.etag;
       }
 
-      const response = await client.deleteCalendarObject({
+      let response = await client.deleteCalendarObject({
         calendarObject: { url, etag },
       });
+
+      // On 412 Precondition Failed, refetch the current etag and retry once.
+      // Same rationale as updateEvent — server-side etag drift is common on some
+      // CalDAV servers and a single stale read shouldn't hard-fail the operation.
+      if ((response as any).status === 412) {
+        const calendar = await this.findCalendar(client, calendarName, account.id);
+        const obj = await this.findCalendarObject(client, calendar, uid);
+        url = obj.url;
+        etag = obj.etag;
+        response = await client.deleteCalendarObject({
+          calendarObject: { url, etag },
+        });
+      }
+
       if (!(response as any).ok) {
         throw new CalendarError(
           `Failed to delete event: ${(response as any).status} ${(response as any).statusText}`,

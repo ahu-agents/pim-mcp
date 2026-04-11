@@ -422,13 +422,13 @@ describe("CalDavService", () => {
       );
     });
 
-    it("throws CalendarError when server returns non-ok response", async () => {
+    it("throws CalendarError when retried PUT still returns 412", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
 
-      // findCalendarObject succeeds
-      (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
-      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
+      // findCalendarObject succeeds on both the initial lookup and the post-412 refetch
+      (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
       ]);
 
@@ -441,6 +441,160 @@ describe("CalDavService", () => {
       await expect(
         service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nEND:VCALENDAR"),
       ).rejects.toThrow("Failed to update event: 412 Precondition Failed");
+      // Initial PUT + one retry
+      expect(__mockClient.updateCalendarObject).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws CalendarError when server returns non-412 non-ok response", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      __mockClient.updateCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+      });
+
+      await expect(
+        service.updateEvent("mailbox/Work", "evt-1", "BEGIN:VCALENDAR\nEND:VCALENDAR"),
+      ).rejects.toThrow("Failed to update event: 500 Internal Server Error");
+      // No retry for non-412 errors
+      expect(__mockClient.updateCalendarObject).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries once with a fresh etag on 412 and succeeds", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      const fullEvent = {
+        uid: "evt-1",
+        title: "Updated Meeting",
+        start: "2026-03-10T14:00:00.000Z",
+        end: "2026-03-10T15:00:00.000Z",
+        all_day: false,
+        location: null,
+        description: null,
+        status: null,
+        availability: null,
+        url: null,
+        attendees: [],
+        organizer: null,
+        recurrence_rule: null,
+        is_recurring: false,
+        created: null,
+        last_modified: null,
+        alarms: [],
+        categories: [],
+        geo: null,
+      };
+
+      // Two findCalendarObject calls (initial + retry), each parses one event; final
+      // parse builds the EventFull response.
+      (parseIcsEvents as any)
+        .mockReturnValueOnce([{ uid: "evt-1" }])
+        .mockReturnValueOnce([{ uid: "evt-1" }])
+        .mockReturnValueOnce([fullEvent]);
+
+      __mockClient.fetchCalendarObjects
+        .mockResolvedValueOnce([{ data: "...", url: "/cal/evt-1.ics", etag: '"stale"' }])
+        .mockResolvedValueOnce([{ data: "...", url: "/cal/evt-1.ics", etag: '"fresh"' }]);
+
+      __mockClient.updateCalendarObject
+        .mockResolvedValueOnce({ ok: false, status: 412, statusText: "Precondition Failed" })
+        .mockResolvedValueOnce({ ok: true });
+
+      const result = await service.updateEvent(
+        "mailbox/Work",
+        "evt-1",
+        "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR",
+      );
+
+      expect(result.uid).toBe("evt-1");
+      expect(__mockClient.updateCalendarObject).toHaveBeenCalledTimes(2);
+      // First PUT used the stale etag, retry used the fresh one
+      expect(__mockClient.updateCalendarObject).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({ etag: '"stale"' }),
+        }),
+      );
+      expect(__mockClient.updateCalendarObject).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({ etag: '"fresh"' }),
+        }),
+      );
+    });
+
+    it("retries with a fresh etag on 412 even when meta was provided by the caller", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      const fullEvent = {
+        uid: "evt-1",
+        title: "Updated Meeting",
+        start: "2026-03-10T14:00:00.000Z",
+        end: "2026-03-10T15:00:00.000Z",
+        all_day: false,
+        location: null,
+        description: null,
+        status: null,
+        availability: null,
+        url: null,
+        attendees: [],
+        organizer: null,
+        recurrence_rule: null,
+        is_recurring: false,
+        created: null,
+        last_modified: null,
+        alarms: [],
+        categories: [],
+        geo: null,
+      };
+
+      // parseIcsEvents: one call inside the refetch's findCalendarObject, one for the final response.
+      (parseIcsEvents as any)
+        .mockReturnValueOnce([{ uid: "evt-1" }])
+        .mockReturnValueOnce([fullEvent]);
+
+      __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"fresh"' },
+      ]);
+
+      __mockClient.updateCalendarObject
+        .mockResolvedValueOnce({ ok: false, status: 412, statusText: "Precondition Failed" })
+        .mockResolvedValueOnce({ ok: true });
+
+      const result = await service.updateEvent(
+        "mailbox/Work",
+        "evt-1",
+        "BEGIN:VCALENDAR\nUPDATED\nEND:VCALENDAR",
+        { url: "/cal/evt-1.ics", etag: '"stale"' },
+      );
+
+      expect(result.uid).toBe("evt-1");
+      expect(__mockClient.updateCalendarObject).toHaveBeenCalledTimes(2);
+      // First PUT used the caller-supplied stale etag
+      expect(__mockClient.updateCalendarObject).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({ etag: '"stale"' }),
+        }),
+      );
+      // Retry used the fresh etag from the server
+      expect(__mockClient.updateCalendarObject).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({ etag: '"fresh"' }),
+        }),
+      );
+      // Refetch happened exactly once (for the retry)
+      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(1);
     });
 
     it("skips findCalendarObject when meta is provided", async () => {
@@ -553,6 +707,59 @@ describe("CalDavService", () => {
           }),
         }),
       );
+    });
+
+    it("retries once with a fresh etag on 412 and succeeds", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      // Two findCalendarObject calls: initial lookup + retry refetch
+      (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects
+        .mockResolvedValueOnce([{ data: "...", url: "/cal/evt-1.ics", etag: '"stale"' }])
+        .mockResolvedValueOnce([{ data: "...", url: "/cal/evt-1.ics", etag: '"fresh"' }]);
+
+      __mockClient.deleteCalendarObject
+        .mockResolvedValueOnce({ ok: false, status: 412, statusText: "Precondition Failed" })
+        .mockResolvedValueOnce({ ok: true });
+
+      await service.deleteEvent("mailbox/Work", "evt-1");
+
+      expect(__mockClient.deleteCalendarObject).toHaveBeenCalledTimes(2);
+      expect(__mockClient.deleteCalendarObject).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({ etag: '"stale"' }),
+        }),
+      );
+      expect(__mockClient.deleteCalendarObject).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          calendarObject: expect.objectContaining({ etag: '"fresh"' }),
+        }),
+      );
+    });
+
+    it("throws CalendarError when retried DELETE still returns 412", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+
+      (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      __mockClient.deleteCalendarObject.mockResolvedValue({
+        ok: false,
+        status: 412,
+        statusText: "Precondition Failed",
+      });
+
+      await expect(service.deleteEvent("mailbox/Work", "evt-1")).rejects.toThrow(
+        "Failed to delete event: 412 Precondition Failed",
+      );
+      // Initial DELETE + one retry
+      expect(__mockClient.deleteCalendarObject).toHaveBeenCalledTimes(2);
     });
   });
 
