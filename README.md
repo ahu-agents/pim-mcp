@@ -12,42 +12,46 @@ AI agent tooling for email (IMAP/SMTP), calendar (CalDAV), and contacts (CardDAV
 
 ## Tools
 
-### Email (10 tools)
+### [Email (12 tools)](docs/tools/email-mcp.md)
 
 | Tool | Description |
 |------|-------------|
-| `list_emails` | Search and filter emails by folder, sender, subject, date, flags |
+| `search_emails` | Search and filter emails by folder, sender, subject, date, flags |
 | `get_email` | Fetch full email by UID — headers, body, attachment metadata |
-| `send_email` | Compose and send via SMTP with attachment support |
-| `move_email` | Move email between folders |
+| `send_email` | Compose and send via SMTP, reply with threading, or save as draft |
+| `send_draft` | Send an existing draft from the Drafts folder |
+| `move_email` | Move emails between folders |
 | `mark_email` | Set/unset flags (read, unread, flagged) |
 | `delete_email` | Move to trash or permanently delete |
-| `list_folders` | List all IMAP folders |
+| `list_folders` | List all IMAP folders with special-use flags |
 | `create_folder` | Create an IMAP folder |
-| `download_attachment` | Download attachment by email UID and filename |
-| `get_email_raw` | Export email as .eml |
+| `download_attachment` | Download attachment by email UID and part ID |
+| `get_email_raw` | Export email as raw .eml |
+| `get_folder_status` | Get total and unread message counts for a folder |
 
-### Calendar (9 tools)
+### [Calendar (11 tools)](docs/tools/cal-mcp.md)
 
 | Tool | Description |
 |------|-------------|
 | `list_calendars` | Discover calendars across all configured providers |
-| `list_events` | Query events by date range and calendar |
-| `get_event` | Get event details by UID |
-| `create_event` | Create event with title, start/end, location, attendees |
-| `update_event` | Update existing event by UID |
-| `delete_event` | Delete event by UID |
+| `list_events` | Query events by date range with recurrence expansion |
+| `get_today_events` | Get all events for today |
+| `search_events` | Keyword search across title, description, and location |
+| `get_event` | Get full event details by UID |
+| `create_event` | Create event with attendees, alarms, categories |
+| `update_event` | Update event by UID, including single recurrence instances |
+| `delete_event` | Delete event by UID or single recurrence instance |
 | `create_events_batch` | Create multiple events at once |
-| `import_ics` | Parse .ics content and create events |
+| `import_ics` | Import events from .ics content |
 | `find_free_slots` | Find available time slots across calendars |
 
-### Contacts (6 tools)
+### [Contacts (6 tools)](docs/tools/card-mcp.md)
 
 | Tool | Description |
 |------|-------------|
 | `list_contacts` | List and search contacts by name, email, phone, org |
 | `get_contact` | Get full contact details by UID |
-| `create_contact` | Create a new contact |
+| `create_contact` | Create a new contact with typed fields |
 | `update_contact` | Update an existing contact (merge-based) |
 | `delete_contact` | Delete a contact by UID |
 | `resolve_contact` | Given a name, return email address |
