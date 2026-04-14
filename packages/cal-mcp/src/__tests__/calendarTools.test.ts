@@ -4,6 +4,7 @@ import { CALENDAR_TOOLS, handleCalendarTool } from "../tools/calendarTools.js";
 const mockService = {
   listCalendars: vi.fn(),
   listEvents: vi.fn(),
+  listEventsFull: vi.fn(),
   getEvent: vi.fn(),
   getEventWithMeta: vi.fn(),
   createEvent: vi.fn(),
@@ -338,44 +339,57 @@ describe("calendarTools", () => {
       expect(parsed.count).toBe(1);
     });
 
-    it("list_events detail_level=full preserves occurrence_date from summary", async () => {
-      mockService.listEvents.mockResolvedValueOnce([
-        {
-          uid: "weekly",
-          calendar_id: "prov/Cal",
-          title: "Standup",
-          start: "2026-03-05T10:00:00Z",
-          end: "2026-03-05T11:00:00Z",
-          all_day: false,
-          location: null,
-          status: null,
-          is_recurring: true,
-          occurrence_date: "2026-03-05T10:00:00Z",
-        },
+    const fullEventFixture = (overrides: Record<string, unknown> = {}) => ({
+      uid: "weekly",
+      calendar_id: "prov/Cal",
+      title: "Standup",
+      start: "2026-03-05T10:00:00Z",
+      end: "2026-03-05T11:00:00Z",
+      all_day: false,
+      is_recurring: true,
+      occurrence_date: "2026-03-05T10:00:00Z",
+      location: null,
+      description: "Weekly standup meeting",
+      attendees: [],
+      alarms: [],
+      categories: [],
+      geo: null,
+      organizer: null,
+      status: null,
+      availability: null,
+      url: null,
+      created: null,
+      last_modified: null,
+      recurrence_rule: "FREQ=WEEKLY;COUNT=52",
+      ...overrides,
+    });
+
+    it("list_events detail_level=full fetches full events in one call (no per-event getEvent)", async () => {
+      mockService.listEventsFull.mockResolvedValueOnce([fullEventFixture()]);
+
+      const result = await handleCalendarTool(
+        "list_events",
+        { start: "2026-03-01", end: "2026-03-31", calendar: "prov/Cal", detail_level: "full" },
+        mockService as any,
+      );
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.events[0].occurrence_date).toBe("2026-03-05T10:00:00Z");
+      expect(parsed.events[0].start).toBe("2026-03-05T10:00:00Z");
+      expect(parsed.events[0].end).toBe("2026-03-05T11:00:00Z");
+      expect(parsed.events[0].description).toBe("Weekly standup meeting");
+      expect(mockService.getEvent).not.toHaveBeenCalled();
+      expect(mockService.listEventsFull).toHaveBeenCalledTimes(1);
+    });
+
+    it("list_events detail_level=full across all calendars fetches in parallel", async () => {
+      mockService.listCalendars.mockResolvedValueOnce([
+        { calendar_id: "prov/A" },
+        { calendar_id: "prov/B" },
       ]);
-      mockService.getEvent.mockResolvedValueOnce({
-        uid: "weekly",
-        calendar_id: "prov/Cal",
-        title: "Standup",
-        start: "2026-01-01T10:00:00Z",
-        end: "2026-01-01T11:00:00Z",
-        all_day: false,
-        is_recurring: true,
-        occurrence_date: null,
-        location: null,
-        description: "Weekly standup meeting",
-        attendees: [],
-        alarms: [],
-        categories: [],
-        geo: null,
-        organizer: null,
-        status: null,
-        availability: null,
-        url: null,
-        created: null,
-        last_modified: null,
-        recurrence_rule: "FREQ=WEEKLY;COUNT=52",
-      });
+      mockService.listEventsFull
+        .mockResolvedValueOnce([fullEventFixture({ uid: "a", calendar_id: "prov/A" })])
+        .mockResolvedValueOnce([fullEventFixture({ uid: "b", calendar_id: "prov/B" })]);
 
       const result = await handleCalendarTool(
         "list_events",
@@ -384,54 +398,23 @@ describe("calendarTools", () => {
       );
 
       const parsed = JSON.parse(result.content[0].text);
-      // Should preserve occurrence_date from summary, not master's null
-      expect(parsed.events[0].occurrence_date).toBe("2026-03-05T10:00:00Z");
-      // Should preserve occurrence-specific start/end, not master's
-      expect(parsed.events[0].start).toBe("2026-03-05T10:00:00Z");
-      expect(parsed.events[0].end).toBe("2026-03-05T11:00:00Z");
-      // But should include full detail (description) from getEvent
-      expect(parsed.events[0].description).toBe("Weekly standup meeting");
+      expect(parsed.events.map((e: { uid: string }) => e.uid).sort()).toEqual(["a", "b"]);
+      expect(mockService.listEventsFull).toHaveBeenCalledTimes(2);
+      expect(mockService.listEvents).not.toHaveBeenCalled();
+      expect(mockService.getEvent).not.toHaveBeenCalled();
     });
 
-    it("get_today_events detail_level=full preserves occurrence_date from summary", async () => {
+    it("get_today_events detail_level=full uses listEventsFull", async () => {
       mockService.listCalendars.mockResolvedValueOnce([{ calendar_id: "prov/Cal" }]);
-      mockService.listEvents.mockResolvedValueOnce([
-        {
+      mockService.listEventsFull.mockResolvedValueOnce([
+        fullEventFixture({
           uid: "daily",
-          calendar_id: "prov/Cal",
-          title: "Standup",
           start: "2026-03-28T09:00:00Z",
           end: "2026-03-28T09:30:00Z",
-          all_day: false,
-          location: null,
-          status: null,
-          is_recurring: true,
           occurrence_date: "2026-03-28T09:00:00Z",
-        },
+          description: "Daily standup",
+        }),
       ]);
-      mockService.getEvent.mockResolvedValueOnce({
-        uid: "daily",
-        calendar_id: "prov/Cal",
-        title: "Standup",
-        start: "2026-01-01T09:00:00Z",
-        end: "2026-01-01T09:30:00Z",
-        all_day: false,
-        is_recurring: true,
-        occurrence_date: null,
-        location: null,
-        description: "Daily standup",
-        attendees: [],
-        alarms: [],
-        categories: [],
-        geo: null,
-        organizer: null,
-        status: null,
-        availability: null,
-        url: null,
-        created: null,
-        last_modified: null,
-        recurrence_rule: "FREQ=DAILY",
-      });
 
       const result = await handleCalendarTool(
         "get_today_events",
@@ -441,50 +424,16 @@ describe("calendarTools", () => {
 
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.events[0].occurrence_date).toBe("2026-03-28T09:00:00Z");
-      expect(parsed.events[0].start).toBe("2026-03-28T09:00:00Z");
-      expect(parsed.events[0].end).toBe("2026-03-28T09:30:00Z");
       expect(parsed.events[0].description).toBe("Daily standup");
+      expect(mockService.getEvent).not.toHaveBeenCalled();
     });
 
-    it("search_events detail_level=full preserves occurrence_date from summary", async () => {
+    it("search_events detail_level=full filters against description from full events", async () => {
       mockService.listCalendars.mockResolvedValueOnce([{ calendar_id: "prov/Cal" }]);
-      mockService.listEvents.mockResolvedValueOnce([
-        {
-          uid: "weekly",
-          calendar_id: "prov/Cal",
-          title: "Standup",
-          start: "2026-03-05T10:00:00Z",
-          end: "2026-03-05T11:00:00Z",
-          all_day: false,
-          location: null,
-          status: null,
-          is_recurring: true,
-          occurrence_date: "2026-03-05T10:00:00Z",
-        },
+      mockService.listEventsFull.mockResolvedValueOnce([
+        fullEventFixture({ title: "Standup", description: "Weekly standup meeting" }),
+        fullEventFixture({ uid: "other", title: "Other", description: "Unrelated" }),
       ]);
-      mockService.getEvent.mockResolvedValueOnce({
-        uid: "weekly",
-        calendar_id: "prov/Cal",
-        title: "Standup",
-        start: "2026-01-01T10:00:00Z",
-        end: "2026-01-01T11:00:00Z",
-        all_day: false,
-        is_recurring: true,
-        occurrence_date: null,
-        location: null,
-        description: "Weekly standup meeting",
-        attendees: [],
-        alarms: [],
-        categories: [],
-        geo: null,
-        organizer: null,
-        status: null,
-        availability: null,
-        url: null,
-        created: null,
-        last_modified: null,
-        recurrence_rule: "FREQ=WEEKLY;COUNT=52",
-      });
 
       const result = await handleCalendarTool(
         "search_events",
@@ -493,10 +442,10 @@ describe("calendarTools", () => {
       );
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.events[0].occurrence_date).toBe("2026-03-05T10:00:00Z");
-      expect(parsed.events[0].start).toBe("2026-03-05T10:00:00Z");
-      expect(parsed.events[0].end).toBe("2026-03-05T11:00:00Z");
+      expect(parsed.events).toHaveLength(1);
+      expect(parsed.events[0].uid).toBe("weekly");
       expect(parsed.events[0].description).toBe("Weekly standup meeting");
+      expect(mockService.getEvent).not.toHaveBeenCalled();
     });
   });
 

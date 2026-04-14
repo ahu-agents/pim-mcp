@@ -584,6 +584,67 @@ describe("recurrence expansion", () => {
     expect(exception).toBeDefined();
     expect(exception!.occurrence_date).toBe("2026-03-05T10:00:00.000Z");
   });
+
+  describe("recurring events with TZID DTSTART", () => {
+    // 9:00 AM America/Los_Angeles on the 3rd Friday of every month, starting Jul 18 2025
+    const laMonthlyIcs = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:la-monthly@example.com",
+      "DTSTAMP:20250718T160000Z",
+      "DTSTART;TZID=America/Los_Angeles:20250718T090000",
+      "DTEND;TZID=America/Los_Angeles:20250718T093000",
+      "RRULE:FREQ=MONTHLY;BYDAY=+3FR",
+      "SUMMARY:LA Monthly",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    it("expands TZID DTSTART correctly across PDT (April)", () => {
+      const events = parseIcsEvents(laMonthlyIcs, {
+        start: "2026-04-01T00:00:00Z",
+        end: "2026-05-01T00:00:00Z",
+      });
+      expect(events).toHaveLength(1);
+      // Apr 17, 2026 is 3rd Friday. 9 AM PDT (UTC-7) = 16:00 UTC.
+      expect(events[0].start).toBe("2026-04-17T16:00:00.000Z");
+      expect(events[0].end).toBe("2026-04-17T16:30:00.000Z");
+      expect(events[0].occurrence_date).toBe("2026-04-17T16:00:00.000Z");
+    });
+
+    it("expands TZID DTSTART correctly across PST (January, post-DST-end)", () => {
+      const events = parseIcsEvents(laMonthlyIcs, {
+        start: "2026-01-01T00:00:00Z",
+        end: "2026-02-01T00:00:00Z",
+      });
+      expect(events).toHaveLength(1);
+      // Jan 16, 2026 is 3rd Friday. 9 AM PST (UTC-8) = 17:00 UTC.
+      expect(events[0].start).toBe("2026-01-16T17:00:00.000Z");
+      expect(events[0].end).toBe("2026-01-16T17:30:00.000Z");
+    });
+
+    it("expands TZID DTSTART correctly at the original occurrence (July)", () => {
+      const events = parseIcsEvents(laMonthlyIcs, {
+        start: "2025-07-01T00:00:00Z",
+        end: "2025-08-01T00:00:00Z",
+      });
+      expect(events).toHaveLength(1);
+      // Jul 18, 2025 is 3rd Friday. 9 AM PDT = 16:00 UTC.
+      expect(events[0].start).toBe("2025-07-18T16:00:00.000Z");
+    });
+
+    it("formats TZID occurrences into the requested timezone (Chicago)", () => {
+      const events = parseIcsEvents(
+        laMonthlyIcs,
+        { start: "2026-04-01T00:00:00Z", end: "2026-05-01T00:00:00Z" },
+        "America/Chicago",
+      );
+      expect(events).toHaveLength(1);
+      // 9 AM LA = 11 AM Chicago (both PDT and CDT in April).
+      expect(events[0].start).toBe("2026-04-17T11:00:00-05:00");
+    });
+  });
 });
 
 describe("generateEventIcs", () => {

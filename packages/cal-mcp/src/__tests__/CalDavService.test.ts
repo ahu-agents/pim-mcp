@@ -196,6 +196,52 @@ describe("CalDavService", () => {
     });
   });
 
+  describe("listEventsFull", () => {
+    it("returns full events in a single CalDAV fetch (no per-event getEvent)", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Team Meeting",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: "Office",
+          description: "Weekly sync",
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
+          occurrence_date: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "BEGIN:VCALENDAR...END:VCALENDAR", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      const events = await service.listEventsFull(
+        "mailbox/Work",
+        "2026-03-10T00:00:00Z",
+        "2026-03-10T23:59:59Z",
+      );
+
+      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(1);
+      expect(events).toHaveLength(1);
+      expect(events[0].uid).toBe("evt-1");
+      expect(events[0].description).toBe("Weekly sync");
+      expect(events[0].calendar_id).toBe("mailbox/Work");
+    });
+  });
+
   describe("getEvent", () => {
     it("fetches a single event by UID and returns full details", async () => {
       const { __mockClient } = (await import("tsdav")) as any;

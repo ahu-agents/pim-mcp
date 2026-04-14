@@ -7,7 +7,36 @@ import {
   generateEventIcs,
   parseIcsEvents,
 } from "../ical.js";
-import type { CalDavService, CalendarObjectMeta, EventSummary } from "../services/CalDavService.js";
+import type {
+  CalDavService,
+  CalendarObjectMeta,
+  EventFull,
+  EventSummary,
+} from "../services/CalDavService.js";
+
+async function fetchEvents(
+  service: CalDavService,
+  calendar: string | undefined,
+  start: string,
+  end: string,
+  detailLevel: string,
+): Promise<EventSummary[] | EventFull[]> {
+  const full = detailLevel === "full";
+  if (calendar) {
+    return full
+      ? await service.listEventsFull(calendar, start, end)
+      : await service.listEvents(calendar, start, end);
+  }
+  const calendars = await service.listCalendars();
+  const results = await Promise.all(
+    calendars.map((cal) =>
+      full
+        ? service.listEventsFull(cal.calendar_id, start, end)
+        : service.listEvents(cal.calendar_id, start, end),
+    ),
+  );
+  return results.flat();
+}
 
 export const CALENDAR_TOOLS: Tool[] = [
   {
@@ -452,37 +481,13 @@ export async function handleCalendarTool(
       case "list_events": {
         const calendar = args.calendar as string | undefined;
         const detailLevel = (args.detail_level as string) ?? "summary";
-
-        let events: EventSummary[];
-        if (calendar) {
-          events = await service.listEvents(calendar, args.start as string, args.end as string);
-        } else {
-          const calendars = await service.listCalendars();
-          events = [];
-          for (const cal of calendars) {
-            const calEvents = await service.listEvents(
-              cal.calendar_id,
-              args.start as string,
-              args.end as string,
-            );
-            events.push(...calEvents);
-          }
-        }
-
-        if (detailLevel === "full") {
-          const fullEvents = [];
-          for (const evt of events) {
-            const full = await service.getEvent(evt.calendar_id, evt.uid);
-            // Preserve occurrence-specific fields from the summary (expanded occurrence)
-            fullEvents.push({
-              ...full,
-              start: evt.start,
-              end: evt.end,
-              occurrence_date: evt.occurrence_date,
-            });
-          }
-          return ok({ events: fullEvents });
-        }
+        const events = await fetchEvents(
+          service,
+          calendar,
+          args.start as string,
+          args.end as string,
+          detailLevel,
+        );
         return ok({ events });
       }
 
@@ -499,33 +504,7 @@ export async function handleCalendarTool(
           59,
           59,
         ).toISOString();
-
-        let events: EventSummary[];
-        if (calendar) {
-          events = await service.listEvents(calendar, todayStart, todayEnd);
-        } else {
-          const calendars = await service.listCalendars();
-          events = [];
-          for (const cal of calendars) {
-            const calEvents = await service.listEvents(cal.calendar_id, todayStart, todayEnd);
-            events.push(...calEvents);
-          }
-        }
-
-        if (detailLevel === "full") {
-          const fullEvents = [];
-          for (const evt of events) {
-            const full = await service.getEvent(evt.calendar_id, evt.uid);
-            // Preserve occurrence-specific fields from the summary (expanded occurrence)
-            fullEvents.push({
-              ...full,
-              start: evt.start,
-              end: evt.end,
-              occurrence_date: evt.occurrence_date,
-            });
-          }
-          return ok({ events: fullEvents });
-        }
+        const events = await fetchEvents(service, calendar, todayStart, todayEnd, detailLevel);
         return ok({ events });
       }
 
@@ -538,43 +517,13 @@ export async function handleCalendarTool(
           (args.start as string) ?? new Date(now.getTime() - 90 * 86400000).toISOString();
         const end = (args.end as string) ?? new Date(now.getTime() + 90 * 86400000).toISOString();
 
-        let summaryEvents: EventSummary[];
-        if (calendar) {
-          summaryEvents = await service.listEvents(calendar, start, end);
-        } else {
-          const calendars = await service.listCalendars();
-          summaryEvents = [];
-          for (const cal of calendars) {
-            const calEvents = await service.listEvents(cal.calendar_id, start, end);
-            summaryEvents.push(...calEvents);
-          }
-        }
-
-        if (detailLevel === "full") {
-          const fullEvents = [];
-          for (const evt of summaryEvents) {
-            const full = await service.getEvent(evt.calendar_id, evt.uid);
-            // Preserve occurrence-specific fields from the summary (expanded occurrence)
-            fullEvents.push({
-              ...full,
-              start: evt.start,
-              end: evt.end,
-              occurrence_date: evt.occurrence_date,
-            });
-          }
-          const matched = fullEvents.filter((e) => {
-            const title = e.title?.toLowerCase() ?? "";
-            const location = e.location?.toLowerCase() ?? "";
-            const description = e.description?.toLowerCase() ?? "";
-            return title.includes(query) || location.includes(query) || description.includes(query);
-          });
-          return ok({ events: matched });
-        }
-
-        const matched = summaryEvents.filter((e) => {
+        const events = await fetchEvents(service, calendar, start, end, detailLevel);
+        const matched = events.filter((e) => {
           const title = e.title?.toLowerCase() ?? "";
           const location = e.location?.toLowerCase() ?? "";
-          return title.includes(query) || location.includes(query);
+          const description =
+            detailLevel === "full" ? ((e as EventFull).description?.toLowerCase() ?? "") : "";
+          return title.includes(query) || location.includes(query) || description.includes(query);
         });
         return ok({ events: matched });
       }

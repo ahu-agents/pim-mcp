@@ -96,6 +96,79 @@ function formatTriggerHuman(seconds: number): string {
   return `${parts.join(", ")} ${suffix}`;
 }
 
+// node-ical + rrule store DTSTART as "wall-clock reinterpreted as UTC" and strip
+// the TZID before passing to rrule. As a result, rrule.between() returns UTC
+// timestamps that do not represent the correct moment of the wall-clock time in
+// the original tzid, and the offset is also not DST-aware. We recompute UTC
+// per-occurrence: take the wall-clock time-of-day from DTSTART (in tzid) and
+// resolve it against each occurrence's date using Intl.
+function getTzOffsetMs(instantMs: number, tzid: string): number {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tzid,
+    timeZoneName: "shortOffset",
+  });
+  const parts = fmt.formatToParts(new Date(instantMs));
+  const name = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  const m = name.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+  if (!m) return 0;
+  const sign = m[1] === "-" ? -1 : 1;
+  const hh = Number.parseInt(m[2], 10);
+  const mm = m[3] ? Number.parseInt(m[3], 10) : 0;
+  return sign * (hh * 3600000 + mm * 60000);
+}
+
+function wallClockInTzToUtc(
+  year: number,
+  month1: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  tzid: string,
+): Date {
+  const guess = Date.UTC(year, month1 - 1, day, hour, minute, second);
+  const offsetMs = getTzOffsetMs(guess, tzid);
+  return new Date(guess - offsetMs);
+}
+
+function extractWallClockInTz(
+  instant: Date,
+  tzid: string,
+): {
+  hour: number;
+  minute: number;
+  second: number;
+} {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tzid,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(instant).map((p) => [p.type, p.value]));
+  const hourRaw = parts.hour === "24" ? "0" : parts.hour;
+  return {
+    hour: Number.parseInt(hourRaw, 10),
+    minute: Number.parseInt(parts.minute, 10),
+    second: Number.parseInt(parts.second, 10),
+  };
+}
+
+function correctOccurrenceUtc(rawOcc: Date, dtstart: Date, tzid: string | undefined): Date {
+  if (!tzid) return rawOcc;
+  const wall = extractWallClockInTz(dtstart, tzid);
+  return wallClockInTzToUtc(
+    rawOcc.getUTCFullYear(),
+    rawOcc.getUTCMonth() + 1,
+    rawOcc.getUTCDate(),
+    wall.hour,
+    wall.minute,
+    wall.second,
+    tzid,
+  );
+}
+
 function parseAlarm(alarm: { trigger: unknown; action: string }): ParsedAlarm {
   const raw = alarm.trigger;
 
@@ -246,6 +319,7 @@ export function parseIcsEvents(
       const originalStart = new Date(vevent.start);
       const originalEnd = new Date(vevent.end);
       const duration = originalEnd.getTime() - originalStart.getTime();
+      const tzid = (vevent.start as unknown as { tz?: string }).tz;
 
       const occurrences = vevent.rrule.between(
         new Date(range.start),
@@ -253,7 +327,8 @@ export function parseIcsEvents(
         true, // inclusive
       );
 
-      for (const occStart of occurrences) {
+      for (const rawOcc of occurrences) {
+        const occStart = correctOccurrenceUtc(rawOcc, originalStart, tzid);
         const occEnd = new Date(occStart.getTime() + duration);
         events.push({
           ...baseProps,

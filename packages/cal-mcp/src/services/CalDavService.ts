@@ -258,6 +258,35 @@ export class CalDavService {
     }
   }
 
+  async listEventsFull(calendarId: string, start: string, end: string): Promise<EventFull[]> {
+    const { account, calendarName } = this.resolveAccount(calendarId);
+
+    try {
+      const client = await this.getClient(account);
+      const calendar = await this.findCalendar(client, calendarName, account.id);
+
+      const objects = await client.fetchCalendarObjects({
+        calendar,
+        timeRange: { start, end },
+        expand: true,
+      });
+
+      const events: EventFull[] = [];
+      for (const obj of objects) {
+        if (!obj.data) continue;
+        const parsed = parseIcsEvents(obj.data, { start, end }, this.timezone);
+        for (const event of parsed) {
+          events.push(this.toEventFull(event, calendarId));
+        }
+      }
+
+      return events;
+    } catch (error) {
+      if (error instanceof CalendarError) throw error;
+      throw toPimError(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
   async getEvent(calendarId: string, uid: string): Promise<EventFull> {
     const { account, calendarName } = this.resolveAccount(calendarId);
 
