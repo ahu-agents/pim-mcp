@@ -183,10 +183,7 @@ export function extractDtstartWallClockFromIcs(
   // Find each VEVENT block and match the one whose UID equals the target.
   // Escape regex metacharacters in uid for safety.
   const escapedUid = uid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const veventRe = new RegExp(
-    `BEGIN:VEVENT\\r?\\n[\\s\\S]*?END:VEVENT`,
-    "g",
-  );
+  const veventRe = /BEGIN:VEVENT\r?\n[\s\S]*?END:VEVENT/g;
   const uidLineRe = new RegExp(`^UID:${escapedUid}\\s*$`, "m");
   const blocks = unfolded.match(veventRe) ?? [];
   const block = blocks.find((b) => uidLineRe.test(b));
@@ -215,7 +212,7 @@ export function extractExdatesFromIcs(icsContent: string, uid: string): Set<numb
   if (!icsContent || !uid) return result;
   const unfolded = icsContent.replace(/\r?\n[ \t]/g, "");
   const escapedUid = uid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const veventRe = new RegExp(`BEGIN:VEVENT\\r?\\n[\\s\\S]*?END:VEVENT`, "g");
+  const veventRe = /BEGIN:VEVENT\r?\n[\s\S]*?END:VEVENT/g;
   const uidLineRe = new RegExp(`^UID:${escapedUid}\\s*$`, "m");
   const blocks = unfolded.match(veventRe) ?? [];
   const block = blocks.find((b) => uidLineRe.test(b));
@@ -248,9 +245,7 @@ export function extractExdatesFromIcs(icsContent: string, uid: string): Set<numb
       if (z === "Z") {
         result.add(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
       } else if (tzid) {
-        result.add(
-          wallClockInTzToUtc(+y, +mo, +d, +h, +mi, +s, tzid).getTime(),
-        );
+        result.add(wallClockInTzToUtc(+y, +mo, +d, +h, +mi, +s, tzid).getTime());
       } else {
         // Floating time (no TZID, no Z) — treat wall-clock as UTC to match
         // rrule's internal representation. Rare in practice.
