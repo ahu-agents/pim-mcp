@@ -57,6 +57,25 @@ export interface EventCreateProps {
     trigger: number | string;
   }>;
   categories?: string[];
+  recurrence_rule?: string;
+}
+
+// Validate an RRULE string per RFC 5545. Accepts either the raw rule
+// ("FREQ=WEEKLY;BYDAY=MO") or a prefixed form ("RRULE:FREQ=WEEKLY;BYDAY=MO").
+// Returns the normalized raw rule (no RRULE: prefix), or null if invalid.
+export function normalizeRecurrenceRule(rule: string): string | null {
+  if (typeof rule !== "string") return null;
+  let trimmed = rule.trim();
+  if (!trimmed) return null;
+  if (/^RRULE:/i.test(trimmed)) trimmed = trimmed.slice(6).trim();
+  // Must contain FREQ= with a valid frequency
+  const freqMatch = trimmed.match(/(?:^|;)FREQ=([A-Z]+)(?:;|$)/);
+  if (!freqMatch) return null;
+  const validFreqs = ["SECONDLY", "MINUTELY", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"];
+  if (!validFreqs.includes(freqMatch[1])) return null;
+  // Disallow whitespace and CRLF inside — any would break the ICS line
+  if (/[\r\n]/.test(trimmed)) return null;
+  return trimmed;
 }
 
 const CUTYPE_MAP: Record<string, string> = {
@@ -511,6 +530,15 @@ export function generateEventIcs(props: EventCreateProps): string {
   if (props.categories && props.categories.length > 0) {
     const categoriesLine = `CATEGORIES:${props.categories.join(",")}`;
     icsString = icsString.replace("END:VEVENT", `${categoriesLine}\r\nEND:VEVENT`);
+  }
+
+  if (props.recurrence_rule) {
+    const normalized = normalizeRecurrenceRule(props.recurrence_rule);
+    if (!normalized) {
+      throw new Error(`Invalid recurrence_rule: ${props.recurrence_rule}`);
+    }
+    const rruleLine = `RRULE:${normalized}`;
+    icsString = icsString.replace("END:VEVENT", `${rruleLine}\r\nEND:VEVENT`);
   }
 
   return icsString;

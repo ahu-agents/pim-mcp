@@ -195,6 +195,11 @@ export const CALENDAR_TOOLS: Tool[] = [
           items: { type: "string" },
           description: "Event categories/tags",
         },
+        recurrence_rule: {
+          type: "string",
+          description:
+            "RFC 5545 RRULE string for a recurring event (e.g., 'FREQ=WEEKLY;BYDAY=MO,WE,FR' or 'FREQ=MONTHLY;BYDAY=+3FR;COUNT=12'). Accepted with or without the 'RRULE:' prefix. FREQ is required.",
+        },
       },
       required: ["calendar", "title", "start", "end"],
     },
@@ -373,6 +378,11 @@ export const CALENDAR_TOOLS: Tool[] = [
                 items: { type: "string" },
                 description: "Event categories/tags",
               },
+              recurrence_rule: {
+                type: "string",
+                description:
+                  "RFC 5545 RRULE string for a recurring event (e.g., 'FREQ=WEEKLY;BYDAY=MO'). FREQ is required.",
+              },
             },
             required: ["title", "start", "end"],
           },
@@ -534,24 +544,32 @@ export async function handleCalendarTool(
       }
 
       case "create_event": {
-        const icsString = generateEventIcs({
-          title: args.title as string,
-          start: args.start as string,
-          end: args.end as string,
-          all_day: (args.all_day as boolean) ?? false,
-          location: args.location as string | undefined,
-          description: args.description as string | undefined,
-          attendees: args.attendees as Array<{ email: string; name?: string }> | undefined,
-          alarms: args.alarms as
-            | Array<{ type: "relative" | "absolute"; trigger: number | string }>
-            | undefined,
-          categories: args.categories as string[] | undefined,
-          timezone: getTimezone(),
-        });
-        const uidMatch = icsString.match(/UID:(.+)/);
-        const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
-        const event = await service.createEvent(args.calendar as string, icsString, uid);
-        return ok({ event });
+        try {
+          const icsString = generateEventIcs({
+            title: args.title as string,
+            start: args.start as string,
+            end: args.end as string,
+            all_day: (args.all_day as boolean) ?? false,
+            location: args.location as string | undefined,
+            description: args.description as string | undefined,
+            attendees: args.attendees as Array<{ email: string; name?: string }> | undefined,
+            alarms: args.alarms as
+              | Array<{ type: "relative" | "absolute"; trigger: number | string }>
+              | undefined,
+            categories: args.categories as string[] | undefined,
+            recurrence_rule: args.recurrence_rule as string | undefined,
+            timezone: getTimezone(),
+          });
+          const uidMatch = icsString.match(/UID:(.+)/);
+          const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
+          const event = await service.createEvent(args.calendar as string, icsString, uid);
+          return ok({ event });
+        } catch (err) {
+          if (err instanceof Error && err.message.startsWith("Invalid recurrence_rule:")) {
+            return error("validation_error", err.message);
+          }
+          throw err;
+        }
       }
 
       case "update_event": {
@@ -734,14 +752,22 @@ export async function handleCalendarTool(
           attendees?: Array<{ email: string; name?: string }>;
           alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
           categories?: string[];
+          recurrence_rule?: string;
         }>;
         const createdEvents = [];
-        for (const input of eventInputs) {
-          const icsString = generateEventIcs({ ...input, timezone: getTimezone() });
-          const uidMatch = icsString.match(/UID:(.+)/);
-          const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
-          const event = await service.createEvent(args.calendar as string, icsString, uid);
-          createdEvents.push(event);
+        try {
+          for (const input of eventInputs) {
+            const icsString = generateEventIcs({ ...input, timezone: getTimezone() });
+            const uidMatch = icsString.match(/UID:(.+)/);
+            const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
+            const event = await service.createEvent(args.calendar as string, icsString, uid);
+            createdEvents.push(event);
+          }
+        } catch (err) {
+          if (err instanceof Error && err.message.startsWith("Invalid recurrence_rule:")) {
+            return error("validation_error", err.message);
+          }
+          throw err;
         }
         return ok({ created: createdEvents.length, events: createdEvents });
       }

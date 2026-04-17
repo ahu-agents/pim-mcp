@@ -6,6 +6,7 @@ import {
   extractDtstartWallClockFromIcs,
   extractExdatesFromIcs,
   generateEventIcs,
+  normalizeRecurrenceRule,
   parseIcsEvents,
 } from "../ical.js";
 
@@ -1334,5 +1335,106 @@ describe("parseIcsEvents — EXDATE filtering in recurrence expansion", () => {
     expect(events).toHaveLength(1);
     // April 17 (the 3rd Friday) is cancelled, so only March 20 should remain.
     expect(events[0].start).toBe("2026-03-20T16:00:00.000Z");
+  });
+});
+
+describe("normalizeRecurrenceRule", () => {
+  it("accepts a bare FREQ rule", () => {
+    expect(normalizeRecurrenceRule("FREQ=WEEKLY")).toBe("FREQ=WEEKLY");
+  });
+
+  it("accepts a complex rule with multiple params", () => {
+    expect(normalizeRecurrenceRule("FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10")).toBe(
+      "FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10",
+    );
+  });
+
+  it("strips an optional RRULE: prefix", () => {
+    expect(normalizeRecurrenceRule("RRULE:FREQ=MONTHLY;BYDAY=+3FR")).toBe(
+      "FREQ=MONTHLY;BYDAY=+3FR",
+    );
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(normalizeRecurrenceRule("  FREQ=DAILY  ")).toBe("FREQ=DAILY");
+  });
+
+  it("rejects a rule missing FREQ", () => {
+    expect(normalizeRecurrenceRule("BYDAY=MO;COUNT=5")).toBeNull();
+  });
+
+  it("rejects an unknown frequency", () => {
+    expect(normalizeRecurrenceRule("FREQ=FORTNIGHTLY")).toBeNull();
+  });
+
+  it("rejects empty input", () => {
+    expect(normalizeRecurrenceRule("")).toBeNull();
+    expect(normalizeRecurrenceRule("   ")).toBeNull();
+  });
+
+  it("rejects rules with embedded newlines (ICS line injection defense)", () => {
+    expect(normalizeRecurrenceRule("FREQ=DAILY\r\nSUMMARY:hacked")).toBeNull();
+  });
+});
+
+describe("generateEventIcs — recurrence_rule", () => {
+  it("emits an RRULE line when recurrence_rule is provided", () => {
+    const ics = generateEventIcs({
+      title: "Standup",
+      start: "2026-05-04T14:00:00Z",
+      end: "2026-05-04T14:30:00Z",
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+    });
+    expect(ics).toMatch(/RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR/);
+  });
+
+  it("strips an optional RRULE: prefix on input", () => {
+    const ics = generateEventIcs({
+      title: "Standup",
+      start: "2026-05-04T14:00:00Z",
+      end: "2026-05-04T14:30:00Z",
+      recurrence_rule: "RRULE:FREQ=WEEKLY",
+    });
+    // Must end up with exactly one 'RRULE:' prefix (not 'RRULE:RRULE:')
+    expect(ics).toMatch(/RRULE:FREQ=WEEKLY/);
+    expect(ics).not.toMatch(/RRULE:RRULE:/);
+  });
+
+  it("throws on invalid recurrence_rule (missing FREQ)", () => {
+    expect(() =>
+      generateEventIcs({
+        title: "Bad",
+        start: "2026-05-04T14:00:00Z",
+        end: "2026-05-04T14:30:00Z",
+        recurrence_rule: "BYDAY=MO",
+      }),
+    ).toThrow(/Invalid recurrence_rule/);
+  });
+
+  it("does not emit RRULE when recurrence_rule is absent", () => {
+    const ics = generateEventIcs({
+      title: "Once",
+      start: "2026-05-04T14:00:00Z",
+      end: "2026-05-04T14:30:00Z",
+    });
+    expect(ics).not.toMatch(/^RRULE:/m);
+  });
+
+  it("generated ICS round-trips through parseIcsEvents as a recurring event", () => {
+    const ics = generateEventIcs({
+      title: "Weekly Sync",
+      start: "2026-05-04T14:00:00Z",
+      end: "2026-05-04T14:30:00Z",
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=MO",
+      uid: "sync-1@example.com",
+    });
+    // Expand two Mondays: May 4 and May 11 (the RRULE base is May 4, a Monday)
+    const events = parseIcsEvents(ics, {
+      start: "2026-05-04T00:00:00Z",
+      end: "2026-05-18T00:00:00Z",
+    });
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    expect(events[0].is_recurring).toBe(true);
+    expect(events[0].recurrence_rule).toMatch(/FREQ=WEEKLY/);
   });
 });
