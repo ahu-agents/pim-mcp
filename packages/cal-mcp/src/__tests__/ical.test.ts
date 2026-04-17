@@ -3,6 +3,7 @@ import {
   addExdateToIcs,
   combineIcsComponents,
   createExceptionVevent,
+  extractDtstartWallClockFromIcs,
   generateEventIcs,
   parseIcsEvents,
 } from "../ical.js";
@@ -644,6 +645,141 @@ describe("recurrence expansion", () => {
       // 9 AM LA = 11 AM Chicago (both PDT and CDT in April).
       expect(events[0].start).toBe("2026-04-17T11:00:00-05:00");
     });
+  });
+});
+
+describe("extractDtstartWallClockFromIcs", () => {
+  it("extracts TZID and wall-clock time from a DTSTART with TZID param", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:la-monthly@example.com",
+      "DTSTART;TZID=America/Los_Angeles:20250718T090000",
+      "DTEND;TZID=America/Los_Angeles:20250718T093000",
+      "RRULE:FREQ=MONTHLY;BYDAY=+3FR",
+      "SUMMARY:LA Monthly",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractDtstartWallClockFromIcs(ics, "la-monthly@example.com");
+    expect(result).toEqual({
+      tzid: "America/Los_Angeles",
+      hour: 9,
+      minute: 0,
+      second: 0,
+    });
+  });
+
+  it("returns tzid undefined for a UTC DTSTART (no TZID param)", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:utc-event@example.com",
+      "DTSTART:20260417T140000Z",
+      "DTEND:20260417T150000Z",
+      "SUMMARY:UTC Event",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractDtstartWallClockFromIcs(ics, "utc-event@example.com");
+    expect(result).toEqual({ tzid: undefined, hour: 14, minute: 0, second: 0 });
+  });
+
+  it("matches the correct VEVENT when multiple are present", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:first@example.com",
+      "DTSTART;TZID=America/New_York:20260101T070000",
+      "DTEND;TZID=America/New_York:20260101T080000",
+      "SUMMARY:First",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:second@example.com",
+      "DTSTART;TZID=Europe/London:20260101T180000",
+      "DTEND;TZID=Europe/London:20260101T190000",
+      "SUMMARY:Second",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractDtstartWallClockFromIcs(ics, "second@example.com");
+    expect(result).toEqual({
+      tzid: "Europe/London",
+      hour: 18,
+      minute: 0,
+      second: 0,
+    });
+  });
+
+  it("returns null when UID is not found", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:a@example.com",
+      "DTSTART:20260101T000000Z",
+      "DTEND:20260101T010000Z",
+      "SUMMARY:A",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractDtstartWallClockFromIcs(ics, "missing@example.com");
+    expect(result).toBeNull();
+  });
+
+  it("handles RFC 5545 line folding in the VEVENT block", () => {
+    // Fold DTSTART across two lines (continuation line starts with space).
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:folded@example.com",
+      "DTSTART;TZID=America/Los_Ang",
+      " eles:20250718T090000",
+      "DTEND;TZID=America/Los_Angeles:20250718T093000",
+      "SUMMARY:Folded",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractDtstartWallClockFromIcs(ics, "folded@example.com");
+    expect(result).toEqual({
+      tzid: "America/Los_Angeles",
+      hour: 9,
+      minute: 0,
+      second: 0,
+    });
+  });
+
+  it("is resilient to node-ical TZID mis-resolution (regression for container bug)", () => {
+    // Regression: In some Node/tzdata configurations node-ical resolves TZID
+    // incorrectly, causing vevent.start to represent a different UTC instant
+    // than intended. parseIcsEvents must still produce correct occurrences by
+    // reading wall-clock time from the raw ICS. This test exercises the
+    // recurring-event path end-to-end and asserts the correct UTC instant,
+    // regardless of how node-ical interpreted the DTSTART.
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:kathy-chisme@example.com",
+      "DTSTAMP:20250718T160000Z",
+      "DTSTART;TZID=America/Los_Angeles:20250718T090000",
+      "DTEND;TZID=America/Los_Angeles:20250718T093000",
+      "RRULE:FREQ=MONTHLY;BYDAY=+3FR",
+      "SUMMARY:Kathy / Miguel monthly chisme",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(ics, {
+      start: "2026-04-17T00:00:00Z",
+      end: "2026-04-18T00:00:00Z",
+    });
+    expect(events).toHaveLength(1);
+    // 9 AM PDT on Apr 17 2026 = 16:00 UTC. Not 11:00Z (the container bug).
+    expect(events[0].start).toBe("2026-04-17T16:00:00.000Z");
   });
 });
 

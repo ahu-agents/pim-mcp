@@ -169,6 +169,42 @@ function correctOccurrenceUtc(rawOcc: Date, dtstart: Date, tzid: string | undefi
   );
 }
 
+// Extract the raw wall-clock time-of-day and tzid from a VEVENT's DTSTART line
+// in the raw ICS, keyed by UID. This bypasses node-ical's TZID interpretation,
+// which differs across Node builds/container tzdata and produces wrong UTC
+// instants for recurring events when resolution fails silently.
+export function extractDtstartWallClockFromIcs(
+  icsContent: string,
+  uid: string,
+): { tzid?: string; hour: number; minute: number; second: number } | null {
+  if (!icsContent || !uid) return null;
+  // Unfold ICS line folding (RFC 5545: continuation lines start with space/tab)
+  const unfolded = icsContent.replace(/\r?\n[ \t]/g, "");
+  // Find each VEVENT block and match the one whose UID equals the target.
+  // Escape regex metacharacters in uid for safety.
+  const escapedUid = uid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const veventRe = new RegExp(
+    `BEGIN:VEVENT\\r?\\n[\\s\\S]*?END:VEVENT`,
+    "g",
+  );
+  const uidLineRe = new RegExp(`^UID:${escapedUid}\\s*$`, "m");
+  const blocks = unfolded.match(veventRe) ?? [];
+  const block = blocks.find((b) => uidLineRe.test(b));
+  if (!block) return null;
+  // DTSTART line, with optional TZID param. Match only the first (master) DTSTART
+  // — exception VEVENTs have RECURRENCE-ID but still just one DTSTART each.
+  const m = block.match(
+    /^DTSTART(?:;[^:\r\n]*?TZID=([^:;\r\n]+))?[^:\r\n]*:(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/m,
+  );
+  if (!m) return null;
+  return {
+    tzid: m[1],
+    hour: Number.parseInt(m[5], 10),
+    minute: Number.parseInt(m[6], 10),
+    second: Number.parseInt(m[7], 10),
+  };
+}
+
 function parseAlarm(alarm: { trigger: unknown; action: string }): ParsedAlarm {
   const raw = alarm.trigger;
 
@@ -319,7 +355,12 @@ export function parseIcsEvents(
       const originalStart = new Date(vevent.start);
       const originalEnd = new Date(vevent.end);
       const duration = originalEnd.getTime() - originalStart.getTime();
-      const tzid = (vevent.start as unknown as { tz?: string }).tz;
+
+      // Prefer the raw DTSTART from the ICS so TZID resolution is deterministic
+      // across Node builds/container tzdata. Fall back to node-ical's parsed
+      // tz only if the raw extraction fails (e.g., unusual ICS shape).
+      const raw = extractDtstartWallClockFromIcs(icsContent, vevent.uid || "");
+      const tzid = raw?.tzid ?? (vevent.start as unknown as { tz?: string }).tz;
 
       const occurrences = vevent.rrule.between(
         new Date(range.start),
@@ -328,7 +369,17 @@ export function parseIcsEvents(
       );
 
       for (const rawOcc of occurrences) {
-        const occStart = correctOccurrenceUtc(rawOcc, originalStart, tzid);
+        const occStart = raw?.tzid
+          ? wallClockInTzToUtc(
+              rawOcc.getUTCFullYear(),
+              rawOcc.getUTCMonth() + 1,
+              rawOcc.getUTCDate(),
+              raw.hour,
+              raw.minute,
+              raw.second,
+              raw.tzid,
+            )
+          : correctOccurrenceUtc(rawOcc, originalStart, tzid);
         const occEnd = new Date(occStart.getTime() + duration);
         events.push({
           ...baseProps,
