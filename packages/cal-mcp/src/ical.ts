@@ -205,6 +205,62 @@ export function extractDtstartWallClockFromIcs(
   };
 }
 
+// Extract EXDATE UTC instants from a VEVENT in the raw ICS, resolving each one
+// through the same wallClockInTzToUtc pipeline as occurrence expansion so the
+// returned millis align exactly with occurrence millis (enabling Set lookup).
+// Handles: EXDATE with TZID, UTC (Z-suffixed), floating, VALUE=DATE (all-day),
+// comma-separated values, and multiple EXDATE lines per VEVENT.
+export function extractExdatesFromIcs(icsContent: string, uid: string): Set<number> {
+  const result = new Set<number>();
+  if (!icsContent || !uid) return result;
+  const unfolded = icsContent.replace(/\r?\n[ \t]/g, "");
+  const escapedUid = uid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const veventRe = new RegExp(`BEGIN:VEVENT\\r?\\n[\\s\\S]*?END:VEVENT`, "g");
+  const uidLineRe = new RegExp(`^UID:${escapedUid}\\s*$`, "m");
+  const blocks = unfolded.match(veventRe) ?? [];
+  const block = blocks.find((b) => uidLineRe.test(b));
+  if (!block) return result;
+
+  const exdateLineRe = /^EXDATE(?:;([^:\r\n]+))?:([^\r\n]+)/gm;
+  for (const match of block.matchAll(exdateLineRe)) {
+    const paramsStr = match[1] ?? "";
+    const valuesStr = match[2];
+    const tzidMatch = paramsStr.match(/TZID=([^;]+)/);
+    const isDateOnly = /VALUE=DATE(?!-TIME)/.test(paramsStr);
+    const tzid = tzidMatch?.[1];
+
+    for (const raw of valuesStr.split(",")) {
+      const v = raw.trim();
+      if (!v) continue;
+
+      if (isDateOnly) {
+        const m = v.match(/^(\d{4})(\d{2})(\d{2})$/);
+        if (!m) continue;
+        // All-day: UTC midnight matches how node-ical/rrule represent all-day occurrences
+        const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        result.add(ms);
+        continue;
+      }
+
+      const m = v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+      if (!m) continue;
+      const [, y, mo, d, h, mi, s, z] = m;
+      if (z === "Z") {
+        result.add(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
+      } else if (tzid) {
+        result.add(
+          wallClockInTzToUtc(+y, +mo, +d, +h, +mi, +s, tzid).getTime(),
+        );
+      } else {
+        // Floating time (no TZID, no Z) — treat wall-clock as UTC to match
+        // rrule's internal representation. Rare in practice.
+        result.add(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
+      }
+    }
+  }
+  return result;
+}
+
 function parseAlarm(alarm: { trigger: unknown; action: string }): ParsedAlarm {
   const raw = alarm.trigger;
 
@@ -361,6 +417,7 @@ export function parseIcsEvents(
       // tz only if the raw extraction fails (e.g., unusual ICS shape).
       const raw = extractDtstartWallClockFromIcs(icsContent, vevent.uid || "");
       const tzid = raw?.tzid ?? (vevent.start as unknown as { tz?: string }).tz;
+      const exdateMs = extractExdatesFromIcs(icsContent, vevent.uid || "");
 
       const occurrences = vevent.rrule.between(
         new Date(range.start),
@@ -380,6 +437,9 @@ export function parseIcsEvents(
               raw.tzid,
             )
           : correctOccurrenceUtc(rawOcc, originalStart, tzid);
+        // Skip cancelled occurrences (EXDATE). Compared on exact UTC millis
+        // because EXDATEs are resolved through the same pipeline above.
+        if (exdateMs.has(occStart.getTime())) continue;
         const occEnd = new Date(occStart.getTime() + duration);
         events.push({
           ...baseProps,

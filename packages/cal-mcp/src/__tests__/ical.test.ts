@@ -4,6 +4,7 @@ import {
   combineIcsComponents,
   createExceptionVevent,
   extractDtstartWallClockFromIcs,
+  extractExdatesFromIcs,
   generateEventIcs,
   parseIcsEvents,
 } from "../ical.js";
@@ -1141,5 +1142,197 @@ describe("combineIcsComponents", () => {
     const result = combineIcsComponents(icsWithTz, exceptionVevent);
     expect(result).toContain("VTIMEZONE");
     expect(result).toContain("TZID:America/Chicago");
+  });
+});
+
+describe("extractExdatesFromIcs", () => {
+  it("returns an empty Set when the VEVENT has no EXDATE", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:no-exdate@example.com",
+      "DTSTART:20260101T140000Z",
+      "DTEND:20260101T150000Z",
+      "RRULE:FREQ=WEEKLY",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractExdatesFromIcs(ics, "no-exdate@example.com");
+    expect(result.size).toBe(0);
+  });
+
+  it("parses a UTC EXDATE (Z suffix) to the correct UTC millis", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:utc-exdate@example.com",
+      "DTSTART:20260101T140000Z",
+      "DTEND:20260101T150000Z",
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE:20260115T140000Z",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractExdatesFromIcs(ics, "utc-exdate@example.com");
+    expect(result.size).toBe(1);
+    expect(result.has(Date.UTC(2026, 0, 15, 14, 0, 0))).toBe(true);
+  });
+
+  it("parses an EXDATE with TZID through wallClockInTzToUtc", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:tz-exdate@example.com",
+      "DTSTART;TZID=America/Los_Angeles:20260117T090000",
+      "DTEND;TZID=America/Los_Angeles:20260117T093000",
+      "RRULE:FREQ=MONTHLY;BYDAY=+3FR",
+      "EXDATE;TZID=America/Los_Angeles:20260417T090000",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractExdatesFromIcs(ics, "tz-exdate@example.com");
+    // 9 AM PDT on Apr 17 = 16:00 UTC
+    expect(result.has(Date.UTC(2026, 3, 17, 16, 0, 0))).toBe(true);
+  });
+
+  it("parses comma-separated EXDATE values into multiple entries", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:multi-exdate@example.com",
+      "DTSTART:20260101T140000Z",
+      "DTEND:20260101T150000Z",
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE:20260115T140000Z,20260122T140000Z,20260129T140000Z",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractExdatesFromIcs(ics, "multi-exdate@example.com");
+    expect(result.size).toBe(3);
+    expect(result.has(Date.UTC(2026, 0, 15, 14, 0, 0))).toBe(true);
+    expect(result.has(Date.UTC(2026, 0, 22, 14, 0, 0))).toBe(true);
+    expect(result.has(Date.UTC(2026, 0, 29, 14, 0, 0))).toBe(true);
+  });
+
+  it("accumulates across multiple EXDATE lines on one VEVENT", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:multiline-exdate@example.com",
+      "DTSTART:20260101T140000Z",
+      "DTEND:20260101T150000Z",
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE:20260115T140000Z",
+      "EXDATE:20260122T140000Z",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractExdatesFromIcs(ics, "multiline-exdate@example.com");
+    expect(result.size).toBe(2);
+  });
+
+  it("parses VALUE=DATE EXDATE (all-day) as UTC midnight", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:allday-exdate@example.com",
+      "DTSTART;VALUE=DATE:20260101",
+      "DTEND;VALUE=DATE:20260102",
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE;VALUE=DATE:20260115",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = extractExdatesFromIcs(ics, "allday-exdate@example.com");
+    expect(result.has(Date.UTC(2026, 0, 15))).toBe(true);
+  });
+
+  it("isolates EXDATEs per UID when multiple VEVENTs exist", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:first@example.com",
+      "DTSTART:20260101T140000Z",
+      "DTEND:20260101T150000Z",
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE:20260115T140000Z",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:second@example.com",
+      "DTSTART:20260101T180000Z",
+      "DTEND:20260101T190000Z",
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE:20260122T180000Z",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const first = extractExdatesFromIcs(ics, "first@example.com");
+    const second = extractExdatesFromIcs(ics, "second@example.com");
+    expect(first.size).toBe(1);
+    expect(second.size).toBe(1);
+    expect(first.has(Date.UTC(2026, 0, 15, 14, 0, 0))).toBe(true);
+    expect(second.has(Date.UTC(2026, 0, 22, 18, 0, 0))).toBe(true);
+  });
+});
+
+describe("parseIcsEvents — EXDATE filtering in recurrence expansion", () => {
+  it("excludes a cancelled occurrence from list_events results (UTC EXDATE)", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:weekly-with-skip@example.com",
+      "DTSTAMP:20260101T140000Z",
+      "DTSTART:20260107T140000Z",
+      "DTEND:20260107T150000Z",
+      "RRULE:FREQ=WEEKLY;BYDAY=WE",
+      "EXDATE:20260121T140000Z",
+      "SUMMARY:Weekly Standup",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(ics, {
+      start: "2026-01-07T00:00:00Z",
+      end: "2026-02-01T00:00:00Z",
+    });
+    // Without the fix: 4 Wednesdays (Jan 7, 14, 21, 28). With fix: 3 (Jan 21 skipped).
+    expect(events).toHaveLength(3);
+    const starts = events.map((e) => e.start);
+    expect(starts).toContain("2026-01-07T14:00:00.000Z");
+    expect(starts).toContain("2026-01-14T14:00:00.000Z");
+    expect(starts).not.toContain("2026-01-21T14:00:00.000Z");
+    expect(starts).toContain("2026-01-28T14:00:00.000Z");
+  });
+
+  it("excludes a cancelled occurrence with TZID EXDATE matching TZID DTSTART", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:la-skip@example.com",
+      "DTSTAMP:20250718T160000Z",
+      "DTSTART;TZID=America/Los_Angeles:20250718T090000",
+      "DTEND;TZID=America/Los_Angeles:20250718T093000",
+      "RRULE:FREQ=MONTHLY;BYDAY=+3FR",
+      "EXDATE;TZID=America/Los_Angeles:20260417T090000",
+      "SUMMARY:LA Monthly w/ skip",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    // Query a window covering two occurrences: March and April 2026.
+    const events = parseIcsEvents(ics, {
+      start: "2026-03-01T00:00:00Z",
+      end: "2026-05-01T00:00:00Z",
+    });
+    expect(events).toHaveLength(1);
+    // April 17 (the 3rd Friday) is cancelled, so only March 20 should remain.
+    expect(events[0].start).toBe("2026-03-20T16:00:00.000Z");
   });
 });
