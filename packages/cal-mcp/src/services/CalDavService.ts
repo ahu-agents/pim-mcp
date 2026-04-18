@@ -152,12 +152,21 @@ export class CalDavService {
     calendar: any,
     uid: string,
   ): Promise<{ url: string; etag?: string; data?: string }> {
+    const debug = process.env.CAL_MCP_DEBUG === "1";
+    const timings: Array<{ step: string; ms: number; count?: number }> = [];
+    const step = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+      const t0 = Date.now();
+      const v = await fn();
+      const ms = Date.now() - t0;
+      const entry: { step: string; ms: number; count?: number } = { step: name, ms };
+      if (Array.isArray(v)) entry.count = v.length;
+      timings.push(entry);
+      if (debug) process.stderr.write(`[cal-mcp] ${name}: ${ms}ms\n`);
+      return v;
+    };
+
     // Use a CalDAV calendar-query REPORT with a UID text-match filter so the
     // server returns only the target event instead of the entire calendar.
-    // The unfiltered scan (previous behavior) is pathological on calendars with
-    // many or large events: Mailbox.org in particular could hang beyond 60s
-    // when the total payload was large, producing a silent MCP deadlock on
-    // get_event / update_event / delete_event for any recently-used UID.
     const uidFilter = {
       "comp-filter": {
         _attributes: { name: "VCALENDAR" },
@@ -171,10 +180,9 @@ export class CalDavService {
       },
     };
 
-    const filtered = await client.fetchCalendarObjects({
-      calendar,
-      filters: uidFilter,
-    });
+    const filtered = await step("fetchCalendarObjects(UID filter)", () =>
+      client.fetchCalendarObjects({ calendar, filters: uidFilter }),
+    );
     for (const obj of filtered) {
       if (!obj.data) continue;
       const events = parseIcsEvents(obj.data);
@@ -183,10 +191,10 @@ export class CalDavService {
       }
     }
 
-    // Defensive fallback: some CalDAV servers ignore UID prop-filter and
-    // return nothing. Fall back to a full scan so behavior isn't worse than
-    // before for non-conforming servers.
-    const all = await client.fetchCalendarObjects({ calendar });
+    // Fallback: some CalDAV servers ignore UID prop-filter. Scan all objects.
+    const all = await step("fetchCalendarObjects(full scan)", () =>
+      client.fetchCalendarObjects({ calendar }),
+    );
     for (const obj of all) {
       if (!obj.data) continue;
       const events = parseIcsEvents(obj.data);
@@ -194,7 +202,14 @@ export class CalDavService {
         return obj as { url: string; etag?: string; data?: string };
       }
     }
-    throw new CalendarError(`Event "${uid}" not found`, ErrorCode.EVENT_NOT_FOUND, uid);
+    const summary = timings
+      .map((t) => `${t.step}=${t.ms}ms${t.count != null ? `(${t.count})` : ""}`)
+      .join(" ");
+    throw new CalendarError(
+      `Event "${uid}" not found (${summary})`,
+      ErrorCode.EVENT_NOT_FOUND,
+      uid,
+    );
   }
 
   private hasWritePrivilege(privileges: Array<Record<string, unknown>>): boolean {
