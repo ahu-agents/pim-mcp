@@ -72,6 +72,22 @@ export interface CalendarObjectMeta {
   etag?: string;
 }
 
+// Diagnostic: when CAL_MCP_DEBUG=1, findCalendarObject appends timing
+// breadcrumbs here. The server flushes them into the next tool response so
+// users can see where time is going even when the MCP process's stderr is
+// swallowed by the harness (e.g., mcporter).
+export const DEBUG_TIMINGS: Array<{ op: string; step: string; ms: number; count?: number }> = [];
+export function drainDebugTimings(): Array<{
+  op: string;
+  step: string;
+  ms: number;
+  count?: number;
+}> {
+  const out = DEBUG_TIMINGS.slice();
+  DEBUG_TIMINGS.length = 0;
+  return out;
+}
+
 export class CalDavService {
   private accounts: Map<string, CalDavAccount>;
   private clients: Map<string, DAVClient> = new Map();
@@ -161,7 +177,10 @@ export class CalDavService {
       const entry: { step: string; ms: number; count?: number } = { step: name, ms };
       if (Array.isArray(v)) entry.count = v.length;
       timings.push(entry);
-      if (debug) process.stderr.write(`[cal-mcp] ${name}: ${ms}ms\n`);
+      if (debug) {
+        process.stderr.write(`[cal-mcp] ${name}: ${ms}ms\n`);
+        DEBUG_TIMINGS.push({ op: `findCalendarObject(${uid})`, ...entry });
+      }
       return v;
     };
 

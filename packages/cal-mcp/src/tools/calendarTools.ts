@@ -7,11 +7,12 @@ import {
   generateEventIcs,
   parseIcsEvents,
 } from "../ical.js";
-import type {
-  CalDavService,
-  CalendarObjectMeta,
-  EventFull,
-  EventSummary,
+import {
+  type CalDavService,
+  type CalendarObjectMeta,
+  type EventFull,
+  type EventSummary,
+  drainDebugTimings,
 } from "../services/CalDavService.js";
 
 async function fetchEvents(
@@ -462,13 +463,27 @@ export const CALENDAR_TOOLS: Tool[] = [
   },
 ];
 
-function ok(payload: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
+function withDebug<T extends object>(payload: T): T | (T & { _debug: unknown }) {
+  if (process.env.CAL_MCP_DEBUG !== "1") return payload;
+  const timings = drainDebugTimings();
+  if (timings.length === 0) return payload;
+  return { ...payload, _debug: { timings } };
+}
+
+function ok(payload: object) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(withDebug(payload), null, 2) }],
+  };
 }
 
 function error(code: string, message: string) {
   return {
-    content: [{ type: "text" as const, text: JSON.stringify({ error: code, message }) }],
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(withDebug({ error: code, message })),
+      },
+    ],
     isError: true,
   };
 }
