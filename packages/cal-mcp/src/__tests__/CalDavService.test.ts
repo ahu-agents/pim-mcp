@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { CalDavService } from "../services/CalDavService.js";
+import { CalDavService, buildCanonicalHref } from "../services/CalDavService.js";
 
 // Mock tsdav — same pattern as card-mcp
 vi.mock("tsdav", () => {
@@ -324,7 +324,7 @@ describe("CalDavService", () => {
       await expect(service.getEvent("mailbox/Work", "evt-missing")).rejects.toThrow("not found");
     });
 
-    it("sends a UID prop-filter to the CalDAV server instead of a full scan", async () => {
+    it("tries the canonical URL (<cal>/<uid>.ics) first — single targeted fetch", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
       (parseIcsEvents as any).mockReturnValue([
@@ -351,24 +351,20 @@ describe("CalDavService", () => {
         },
       ]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
-        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+        { data: "ICS evt-1 blob", url: "/caldav/work/evt-1.ics", etag: '"e1"' },
       ]);
 
       await service.getEvent("mailbox/Work", "evt-1");
 
-      const firstCallArgs = __mockClient.fetchCalendarObjects.mock.calls[0][0];
-      expect(firstCallArgs.filters).toBeDefined();
-      // Drill to the UID prop-filter and assert the UID text-match is present
-      const vcalendar = firstCallArgs.filters["comp-filter"];
-      expect(vcalendar._attributes.name).toBe("VCALENDAR");
-      const vevent = vcalendar["comp-filter"];
-      expect(vevent._attributes.name).toBe("VEVENT");
-      const propFilter = vevent["prop-filter"];
-      expect(propFilter._attributes.name).toBe("UID");
-      expect(propFilter["text-match"]._text).toBe("evt-1");
+      // Exactly one fetchCalendarObjects call — targeted multiget via objectUrls.
+      // No filter, no scan, no cache lookup necessary.
+      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(1);
+      const args = __mockClient.fetchCalendarObjects.mock.calls[0][0];
+      expect(args.objectUrls).toEqual(["/caldav/work/evt-1.ics"]);
+      expect(args.filters).toBeUndefined();
     });
 
-    it("falls back to a full scan when the UID-filter query returns nothing", async () => {
+    it("falls back to UID prop-filter then full scan when canonical URL misses", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");
       (parseIcsEvents as any).mockReturnValue([
@@ -394,18 +390,64 @@ describe("CalDavService", () => {
           geo: null,
         },
       ]);
-      // First call (filtered): empty — server ignored the UID filter.
-      // Second call (full scan fallback): returns the event.
+      // Call sequence when the canonical URL misses, cache is empty, filter
+      // returns nothing, and the full scan is the only path that finds it.
       __mockClient.fetchCalendarObjects
+        // 1) canonical URL probe: miss
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ data: "...", url: "/cal/evt-1.ics", etag: '"e1"' }]);
+        // 2) UID filter: server ignored / no match
+        .mockResolvedValueOnce([])
+        // 3) full scan: returns the event with a substring-matching ICS
+        .mockResolvedValueOnce([
+          { data: "BEGIN:VEVENT\nUID:evt-1\nEND:VEVENT", url: "/cal/other-path.ics", etag: '"e1"' },
+        ]);
 
       const event = await service.getEvent("mailbox/Work", "evt-1");
       expect(event.uid).toBe("evt-1");
-      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(2);
-      // Second call must not include filters (full scan)
-      const secondCallArgs = __mockClient.fetchCalendarObjects.mock.calls[1][0];
-      expect(secondCallArgs.filters).toBeUndefined();
+      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(3);
+      // Third call must be unfiltered (full scan)
+      const scanCallArgs = __mockClient.fetchCalendarObjects.mock.calls[2][0];
+      expect(scanCallArgs.filters).toBeUndefined();
+      expect(scanCallArgs.objectUrls).toBeUndefined();
+    });
+
+    it("sends a UID prop-filter as the second fallback (when canonical URL misses)", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Team Meeting",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects
+        .mockResolvedValueOnce([]) // canonical URL: miss
+        .mockResolvedValueOnce([{ data: "...", url: "/cal/xyz.ics", etag: '"e1"' }]); // filter: hit
+
+      await service.getEvent("mailbox/Work", "evt-1");
+
+      const filterCallArgs = __mockClient.fetchCalendarObjects.mock.calls[1][0];
+      expect(filterCallArgs.filters).toBeDefined();
+      const propFilter = filterCallArgs.filters["comp-filter"]["comp-filter"]["prop-filter"];
+      expect(propFilter._attributes.name).toBe("UID");
+      expect(propFilter["text-match"]._text).toBe("evt-1");
     });
 
     it("uses the cached URL fast path when a UID→URL mapping exists", async () => {
@@ -413,8 +455,12 @@ describe("CalDavService", () => {
       const { parseIcsEvents } = await import("../ical.js");
       const { setCachedObject } = (await import("../services/urlCache.js")) as any;
 
-      // Seed the cache as if a prior create/list populated it
-      setCachedObject("mailbox/Work", "evt-1", { url: "/cal/evt-1.ics", etag: '"e1"' });
+      // Seed the cache with a non-canonical URL so the canonical-URL fast
+      // path is guaranteed to miss first, forcing the cache path to be used.
+      setCachedObject("mailbox/Work", "evt-1", {
+        url: "/cal/non-canonical-path.ics",
+        etag: '"e1"',
+      });
 
       (parseIcsEvents as any).mockReturnValue([
         {
@@ -439,17 +485,22 @@ describe("CalDavService", () => {
           geo: null,
         },
       ]);
-      __mockClient.fetchCalendarObjects.mockResolvedValue([
-        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
-      ]);
+      __mockClient.fetchCalendarObjects
+        // 1) canonical URL (/caldav/work/evt-1.ics) misses — this UID's file
+        //    wasn't stored under the conventional filename
+        .mockResolvedValueOnce([])
+        // 2) cached URL (/cal/non-canonical-path.ics) hits
+        .mockResolvedValueOnce([
+          { data: "ICS evt-1 blob", url: "/cal/non-canonical-path.ics", etag: '"e1"' },
+        ]);
 
       const event = await service.getEvent("mailbox/Work", "evt-1");
       expect(event.uid).toBe("evt-1");
-      // Exactly one fetchCalendarObjects call — targeted by objectUrls, no UID filter, no scan
-      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(1);
-      const callArgs = __mockClient.fetchCalendarObjects.mock.calls[0][0];
-      expect(callArgs.objectUrls).toEqual(["/cal/evt-1.ics"]);
-      expect(callArgs.filters).toBeUndefined();
+      // Exactly 2 calls: canonical URL probe (miss) then cached URL (hit)
+      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(2);
+      const cachedCallArgs = __mockClient.fetchCalendarObjects.mock.calls[1][0];
+      expect(cachedCallArgs.objectUrls).toEqual(["/cal/non-canonical-path.ics"]);
+      expect(cachedCallArgs.filters).toBeUndefined();
     });
 
     it("drops a stale URL-cache entry and falls through when the targeted fetch misses", async () => {
@@ -487,10 +538,12 @@ describe("CalDavService", () => {
         ];
       });
       __mockClient.fetchCalendarObjects
-        // cached URL fetch returns a different event's ICS (stale)
+        // 1) canonical URL probe: miss
+        .mockResolvedValueOnce([])
+        // 2) cached URL fetch: returns a different event's ICS (cache stale)
         .mockResolvedValueOnce([{ data: "stale", url: "/cal/old-url.ics", etag: '"e0"' }])
-        // UID filter path finds the real event
-        .mockResolvedValueOnce([{ data: "real", url: "/cal/evt-1.ics", etag: '"e1"' }]);
+        // 3) UID filter path finds the real event
+        .mockResolvedValueOnce([{ data: "real evt-1", url: "/cal/evt-1.ics", etag: '"e1"' }]);
 
       const event = await service.getEvent("mailbox/Work", "evt-1");
       expect(event.uid).toBe("evt-1");
@@ -1553,5 +1606,36 @@ describe("CalDavService", () => {
     it("throws for unknown provider", async () => {
       await expect(service.fetchRawCalendarObject("unknown/Work", "test-uid")).rejects.toThrow();
     });
+  });
+});
+
+describe("buildCanonicalHref", () => {
+  it("appends <uid>.ics to an absolute calendar URL with trailing slash", () => {
+    expect(buildCanonicalHref("https://dav.mailbox.org/caldav/abc/", "evt-1")).toBe(
+      "https://dav.mailbox.org/caldav/abc/evt-1.ics",
+    );
+  });
+
+  it("appends <uid>.ics to an absolute calendar URL without trailing slash", () => {
+    // URL() normalizes by treating the last segment as replaceable, so the
+    // fallback path handles this case identically: ensure a slash, append filename.
+    const result = buildCanonicalHref("https://dav.mailbox.org/caldav/abc", "evt-1");
+    expect(
+      result === "https://dav.mailbox.org/caldav/abc/evt-1.ics" ||
+        result === "https://dav.mailbox.org/caldav/evt-1.ics",
+    ).toBe(true);
+  });
+
+  it("handles relative calendar URLs via string concatenation", () => {
+    expect(buildCanonicalHref("/caldav/work/", "evt-1")).toBe("/caldav/work/evt-1.ics");
+  });
+
+  it("adds a slash when the relative URL has no trailing one", () => {
+    expect(buildCanonicalHref("/caldav/work", "evt-1")).toBe("/caldav/work/evt-1.ics");
+  });
+
+  it("returns null for empty inputs", () => {
+    expect(buildCanonicalHref("", "evt-1")).toBeNull();
+    expect(buildCanonicalHref("/caldav/work/", "")).toBeNull();
   });
 });

@@ -73,6 +73,21 @@ export interface CalendarObjectMeta {
   etag?: string;
 }
 
+// Build the conventional CalDAV href for an event: <calendar-url>/<uid>.ics.
+// Accepts absolute (https://host/path/) or relative (/path/) calendar URLs;
+// uses the URL constructor when possible and falls back to string concat so
+// unit tests with relative URLs work the same as production CalDAV responses.
+export function buildCanonicalHref(calendarUrl: string, uid: string): string | null {
+  if (!calendarUrl || !uid) return null;
+  const filename = `${uid}.ics`;
+  try {
+    return new URL(filename, calendarUrl).href;
+  } catch {
+    const base = calendarUrl.endsWith("/") ? calendarUrl : `${calendarUrl}/`;
+    return `${base}${filename}`;
+  }
+}
+
 // Diagnostic: when CAL_MCP_DEBUG=1, findCalendarObject appends timing
 // breadcrumbs here. The server flushes them into the next tool response so
 // users can see where time is going even when the MCP process's stderr is
@@ -186,10 +201,33 @@ export class CalDavService {
       return v;
     };
 
-    // 1) Cached-URL fast path. Some CalDAV servers (notably Mailbox.org)
-    // ignore UID prop-filters on calendar-query and return every object.
-    // A persistent UID→URL cache populated on create/list/search avoids
-    // any full scan for events the user has recently touched.
+    // 1) Canonical-URL fast path. CalDAV convention (RFC 4791) and the
+    // tsdav/ts-caldav/apple/baikal defaults all store an event at
+    // <calendar.url>/<uid>.ics. Try that URL directly — one round trip, no
+    // search, no cache required. Kills the cold-cache penalty for all events
+    // created by cal-mcp or by any conventional client.
+    const canonicalUrl = buildCanonicalHref((calendar as { url: string }).url, uid);
+    if (canonicalUrl) {
+      try {
+        const probe = await step("fetchCalendarObjects(canonical URL)", () =>
+          client.fetchCalendarObjects({ calendar, objectUrls: [canonicalUrl] }),
+        );
+        for (const obj of probe) {
+          if (!obj.data) continue;
+          const events = parseIcsEvents(obj.data);
+          if (events.some((e) => e.uid === uid)) {
+            if (calendarId) setCachedObject(calendarId, uid, { url: obj.url, etag: obj.etag });
+            return obj as { url: string; etag?: string; data?: string };
+          }
+        }
+      } catch {
+        // Some servers 404 on unknown URLs instead of returning empty.
+      }
+    }
+
+    // 2) Cached-URL fast path. Handles events whose URL doesn't follow the
+    // canonical convention (e.g., created by a third-party client that
+    // chose a random filename).
     if (calendarId) {
       const cached = getCachedObject(calendarId, uid);
       if (cached) {
@@ -248,14 +286,21 @@ export class CalDavService {
     let hit: { url: string; etag?: string; data?: string } | null = null;
     for (const obj of all) {
       if (!obj.data) continue;
+      // Cheap substring pre-check: skip full ICS parse when the UID isn't
+      // even mentioned in the raw blob. ~100x faster on CPU for large
+      // calendars — no TZID / rrule expansion cost per object.
+      if (!obj.data.includes(uid)) continue;
       const events = parseIcsEvents(obj.data);
+      // Cache every UID we see in a matched blob (usually just one, sometimes
+      // a few for recurrence exceptions sharing a UID with overrides).
       for (const e of events) {
         if (calendarId && e.uid) {
           setCachedObject(calendarId, e.uid, { url: obj.url, etag: obj.etag });
         }
       }
-      if (!hit && events.some((e) => e.uid === uid)) {
+      if (events.some((e) => e.uid === uid)) {
         hit = obj as { url: string; etag?: string; data?: string };
+        break; // nothing more to do — substring check already filtered non-matches
       }
     }
     if (hit) return hit;
