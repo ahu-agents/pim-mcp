@@ -37,6 +37,26 @@ vi.mock("../ical.js", () => ({
   generateEventIcs: vi.fn().mockReturnValue("BEGIN:VCALENDAR\nEND:VCALENDAR"),
 }));
 
+// Mock the persistent URL cache so tests are deterministic and don't touch the
+// user's real cache file. Each test gets a fresh empty cache.
+vi.mock("../services/urlCache.js", () => {
+  const store = new Map<string, { url: string; etag?: string }>();
+  return {
+    getCachedObject: vi.fn(
+      (calendarId: string, uid: string) => store.get(`${calendarId}::${uid}`) ?? null,
+    ),
+    setCachedObject: vi.fn(
+      (calendarId: string, uid: string, obj: { url: string; etag?: string }) => {
+        store.set(`${calendarId}::${uid}`, obj);
+      },
+    ),
+    deleteCachedObject: vi.fn((calendarId: string, uid: string) => {
+      store.delete(`${calendarId}::${uid}`);
+    }),
+    __urlCacheStore: store,
+  };
+});
+
 const TEST_CONFIG = {
   accounts: [
     {
@@ -65,8 +85,13 @@ describe("CalDavService", () => {
     vi.unstubAllEnvs();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    // Reset the mocked URL cache between tests
+    const mod = (await import("../services/urlCache.js")) as unknown as {
+      __urlCacheStore: Map<string, unknown>;
+    };
+    mod.__urlCacheStore.clear();
     service = new CalDavService(TEST_CONFIG);
   });
 
@@ -381,6 +406,99 @@ describe("CalDavService", () => {
       // Second call must not include filters (full scan)
       const secondCallArgs = __mockClient.fetchCalendarObjects.mock.calls[1][0];
       expect(secondCallArgs.filters).toBeUndefined();
+    });
+
+    it("uses the cached URL fast path when a UID→URL mapping exists", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      const { setCachedObject } = (await import("../services/urlCache.js")) as any;
+
+      // Seed the cache as if a prior create/list populated it
+      setCachedObject("mailbox/Work", "evt-1", { url: "/cal/evt-1.ics", etag: '"e1"' });
+
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Team Meeting",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      const event = await service.getEvent("mailbox/Work", "evt-1");
+      expect(event.uid).toBe("evt-1");
+      // Exactly one fetchCalendarObjects call — targeted by objectUrls, no UID filter, no scan
+      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(1);
+      const callArgs = __mockClient.fetchCalendarObjects.mock.calls[0][0];
+      expect(callArgs.objectUrls).toEqual(["/cal/evt-1.ics"]);
+      expect(callArgs.filters).toBeUndefined();
+    });
+
+    it("drops a stale URL-cache entry and falls through when the targeted fetch misses", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      const { setCachedObject, getCachedObject } = (await import("../services/urlCache.js")) as any;
+
+      setCachedObject("mailbox/Work", "evt-1", { url: "/cal/old-url.ics", etag: '"e0"' });
+
+      // parseIcsEvents: first call returns no match (cache stale), later calls return the real event
+      (parseIcsEvents as any).mockImplementation((data: string) => {
+        if (data === "stale") return [{ uid: "other-event" }];
+        return [
+          {
+            uid: "evt-1",
+            title: "Team Meeting",
+            start: "2026-03-10T14:00:00.000Z",
+            end: "2026-03-10T15:00:00.000Z",
+            all_day: false,
+            location: null,
+            description: null,
+            status: "confirmed",
+            availability: "busy",
+            url: null,
+            attendees: [],
+            organizer: null,
+            recurrence_rule: null,
+            is_recurring: false,
+            created: null,
+            last_modified: null,
+            alarms: [],
+            categories: [],
+            geo: null,
+          },
+        ];
+      });
+      __mockClient.fetchCalendarObjects
+        // cached URL fetch returns a different event's ICS (stale)
+        .mockResolvedValueOnce([{ data: "stale", url: "/cal/old-url.ics", etag: '"e0"' }])
+        // UID filter path finds the real event
+        .mockResolvedValueOnce([{ data: "real", url: "/cal/evt-1.ics", etag: '"e1"' }]);
+
+      const event = await service.getEvent("mailbox/Work", "evt-1");
+      expect(event.uid).toBe("evt-1");
+      // Stale entry was dropped and replaced with the fresh one
+      expect(getCachedObject("mailbox/Work", "evt-1")).toEqual({
+        url: "/cal/evt-1.ics",
+        etag: '"e1"',
+      });
     });
 
     it("getEvent returns new fields (alarms, categories, geo, attendee type)", async () => {

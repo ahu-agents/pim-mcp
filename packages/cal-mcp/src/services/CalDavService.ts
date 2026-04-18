@@ -9,6 +9,7 @@ import {
 } from "@miguelarios/pim-core";
 import { DAVClient } from "tsdav";
 import { type ParsedAlarm, type ParsedEvent, type TimeRange, parseIcsEvents } from "../ical.js";
+import { deleteCachedObject, getCachedObject, setCachedObject } from "./urlCache.js";
 
 export interface CalendarInfo {
   calendar_id: string;
@@ -167,6 +168,7 @@ export class CalDavService {
     client: DAVClient,
     calendar: any,
     uid: string,
+    calendarId?: string,
   ): Promise<{ url: string; etag?: string; data?: string }> {
     const debug = process.env.CAL_MCP_DEBUG === "1";
     const timings: Array<{ step: string; ms: number; count?: number }> = [];
@@ -183,6 +185,32 @@ export class CalDavService {
       }
       return v;
     };
+
+    // 1) Cached-URL fast path. Some CalDAV servers (notably Mailbox.org)
+    // ignore UID prop-filters on calendar-query and return every object.
+    // A persistent UID→URL cache populated on create/list/search avoids
+    // any full scan for events the user has recently touched.
+    if (calendarId) {
+      const cached = getCachedObject(calendarId, uid);
+      if (cached) {
+        const targeted = await step("fetchCalendarObjects(cached URL)", () =>
+          client.fetchCalendarObjects({ calendar, objectUrls: [cached.url] }),
+        );
+        for (const obj of targeted) {
+          if (!obj.data) continue;
+          const events = parseIcsEvents(obj.data);
+          if (events.some((e) => e.uid === uid)) {
+            // Refresh etag if changed server-side
+            if (obj.etag && obj.etag !== cached.etag) {
+              setCachedObject(calendarId, uid, { url: cached.url, etag: obj.etag });
+            }
+            return obj as { url: string; etag?: string; data?: string };
+          }
+        }
+        // Cache stale (event moved/deleted) — drop entry and fall through.
+        deleteCachedObject(calendarId, uid);
+      }
+    }
 
     // Use a CalDAV calendar-query REPORT with a UID text-match filter so the
     // server returns only the target event instead of the entire calendar.
@@ -206,21 +234,31 @@ export class CalDavService {
       if (!obj.data) continue;
       const events = parseIcsEvents(obj.data);
       if (events.some((e) => e.uid === uid)) {
+        if (calendarId) setCachedObject(calendarId, uid, { url: obj.url, etag: obj.etag });
         return obj as { url: string; etag?: string; data?: string };
       }
     }
 
-    // Fallback: some CalDAV servers ignore UID prop-filter. Scan all objects.
+    // Fallback: some CalDAV servers ignore UID prop-filter. Scan all objects,
+    // and opportunistically populate the cache with every UID we see so the
+    // next call for any of them hits the fast path.
     const all = await step("fetchCalendarObjects(full scan)", () =>
       client.fetchCalendarObjects({ calendar }),
     );
+    let hit: { url: string; etag?: string; data?: string } | null = null;
     for (const obj of all) {
       if (!obj.data) continue;
       const events = parseIcsEvents(obj.data);
-      if (events.some((e) => e.uid === uid)) {
-        return obj as { url: string; etag?: string; data?: string };
+      for (const e of events) {
+        if (calendarId && e.uid) {
+          setCachedObject(calendarId, e.uid, { url: obj.url, etag: obj.etag });
+        }
+      }
+      if (!hit && events.some((e) => e.uid === uid)) {
+        hit = obj as { url: string; etag?: string; data?: string };
       }
     }
+    if (hit) return hit;
     const summary = timings
       .map((t) => `${t.step}=${t.ms}ms${t.count != null ? `(${t.count})` : ""}`)
       .join(" ");
@@ -304,6 +342,11 @@ export class CalDavService {
         if (!obj.data) continue;
         const parsed = parseIcsEvents(obj.data, { start, end }, this.timezone);
         for (const event of parsed) {
+          // Populate the URL cache opportunistically so subsequent
+          // get/update/delete for any of these UIDs can skip the scan.
+          if (event.uid && obj.url) {
+            setCachedObject(calendarId, event.uid, { url: obj.url, etag: obj.etag });
+          }
           summaries.push({
             uid: event.uid,
             calendar_id: calendarId,
@@ -361,7 +404,7 @@ export class CalDavService {
     try {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
-      const obj = await this.findCalendarObject(client, calendar, uid);
+      const obj = await this.findCalendarObject(client, calendar, uid, calendarId);
       const parsed = parseIcsEvents(obj.data!, undefined, this.timezone);
       const event = parsed.find((e) => e.uid === uid);
       if (!event) {
@@ -384,7 +427,7 @@ export class CalDavService {
     try {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
-      const obj = await this.findCalendarObject(client, calendar, uid);
+      const obj = await this.findCalendarObject(client, calendar, uid, calendarId);
       const parsed = parseIcsEvents(obj.data!, undefined, this.timezone);
       const event = parsed.find((e) => e.uid === uid);
       if (!event) {
@@ -407,10 +450,11 @@ export class CalDavService {
     try {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
+      const filename = `${uid}.ics`;
       const response = await client.createCalendarObject({
         calendar,
         iCalString: icalString,
-        filename: `${uid}.ics`,
+        filename,
       });
       if (!(response as any).ok) {
         throw new CalendarError(
@@ -418,6 +462,17 @@ export class CalDavService {
           ErrorCode.WRITE_FAILED,
           uid,
         );
+      }
+
+      // Cache the object URL for fast UID lookup by subsequent get/update/delete.
+      // tsdav composes the URL as new URL(filename, calendar.url).href, so we can
+      // derive it locally without a re-fetch. ETag is best-effort from the response.
+      try {
+        const objectUrl = new URL(filename, (calendar as { url: string }).url).href;
+        const etag = (response as unknown as Response).headers?.get?.("etag") ?? undefined;
+        setCachedObject(calendarId, uid, { url: objectUrl, etag: etag ?? undefined });
+      } catch {
+        // Cache write failures are non-fatal
       }
 
       const parsed = parseIcsEvents(icalString, undefined, this.timezone);
@@ -452,7 +507,7 @@ export class CalDavService {
         etag = meta.etag;
       } else {
         const calendar = await this.findCalendar(client, calendarName, account.id);
-        const obj = await this.findCalendarObject(client, calendar, uid);
+        const obj = await this.findCalendarObject(client, calendar, uid, calendarId);
         url = obj.url;
         etag = obj.etag;
       }
@@ -466,7 +521,7 @@ export class CalDavService {
       // edits, or weak/strong etag drift. Refetch the current etag and retry once.
       if ((response as any).status === 412) {
         const calendar = await this.findCalendar(client, calendarName, account.id);
-        const obj = await this.findCalendarObject(client, calendar, uid);
+        const obj = await this.findCalendarObject(client, calendar, uid, calendarId);
         url = obj.url;
         etag = obj.etag;
         response = await client.updateCalendarObject({
@@ -509,7 +564,7 @@ export class CalDavService {
         etag = meta.etag;
       } else {
         const calendar = await this.findCalendar(client, calendarName, account.id);
-        const obj = await this.findCalendarObject(client, calendar, uid);
+        const obj = await this.findCalendarObject(client, calendar, uid, calendarId);
         url = obj.url;
         etag = obj.etag;
       }
@@ -523,7 +578,7 @@ export class CalDavService {
       // CalDAV servers and a single stale read shouldn't hard-fail the operation.
       if ((response as any).status === 412) {
         const calendar = await this.findCalendar(client, calendarName, account.id);
-        const obj = await this.findCalendarObject(client, calendar, uid);
+        const obj = await this.findCalendarObject(client, calendar, uid, calendarId);
         url = obj.url;
         etag = obj.etag;
         response = await client.deleteCalendarObject({
@@ -538,6 +593,8 @@ export class CalDavService {
           uid,
         );
       }
+      // Invalidate the URL cache for this UID now that the object is gone.
+      deleteCachedObject(calendarId, uid);
     } catch (error) {
       if (error instanceof CalendarError) throw error;
       this.calendarsCache.delete(account.id);
@@ -553,7 +610,7 @@ export class CalDavService {
     try {
       const client = await this.getClient(account);
       const calendar = await this.findCalendar(client, calendarName, account.id);
-      const obj = await this.findCalendarObject(client, calendar, uid);
+      const obj = await this.findCalendarObject(client, calendar, uid, calendarId);
       if (!obj.data || !obj.etag) {
         throw new CalendarError(
           `Calendar object for "${uid}" has no data or etag`,
