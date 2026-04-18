@@ -299,6 +299,90 @@ describe("CalDavService", () => {
       await expect(service.getEvent("mailbox/Work", "evt-missing")).rejects.toThrow("not found");
     });
 
+    it("sends a UID prop-filter to the CalDAV server instead of a full scan", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Team Meeting",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
+        },
+      ]);
+      __mockClient.fetchCalendarObjects.mockResolvedValue([
+        { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
+      ]);
+
+      await service.getEvent("mailbox/Work", "evt-1");
+
+      const firstCallArgs = __mockClient.fetchCalendarObjects.mock.calls[0][0];
+      expect(firstCallArgs.filters).toBeDefined();
+      // Drill to the UID prop-filter and assert the UID text-match is present
+      const vcalendar = firstCallArgs.filters["comp-filter"];
+      expect(vcalendar._attributes.name).toBe("VCALENDAR");
+      const vevent = vcalendar["comp-filter"];
+      expect(vevent._attributes.name).toBe("VEVENT");
+      const propFilter = vevent["prop-filter"];
+      expect(propFilter._attributes.name).toBe("UID");
+      expect(propFilter["text-match"]._text).toBe("evt-1");
+    });
+
+    it("falls back to a full scan when the UID-filter query returns nothing", async () => {
+      const { __mockClient } = (await import("tsdav")) as any;
+      const { parseIcsEvents } = await import("../ical.js");
+      (parseIcsEvents as any).mockReturnValue([
+        {
+          uid: "evt-1",
+          title: "Team Meeting",
+          start: "2026-03-10T14:00:00.000Z",
+          end: "2026-03-10T15:00:00.000Z",
+          all_day: false,
+          location: null,
+          description: null,
+          status: "confirmed",
+          availability: "busy",
+          url: null,
+          attendees: [],
+          organizer: null,
+          recurrence_rule: null,
+          is_recurring: false,
+          created: null,
+          last_modified: null,
+          alarms: [],
+          categories: [],
+          geo: null,
+        },
+      ]);
+      // First call (filtered): empty — server ignored the UID filter.
+      // Second call (full scan fallback): returns the event.
+      __mockClient.fetchCalendarObjects
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ data: "...", url: "/cal/evt-1.ics", etag: '"e1"' }]);
+
+      const event = await service.getEvent("mailbox/Work", "evt-1");
+      expect(event.uid).toBe("evt-1");
+      expect(__mockClient.fetchCalendarObjects).toHaveBeenCalledTimes(2);
+      // Second call must not include filters (full scan)
+      const secondCallArgs = __mockClient.fetchCalendarObjects.mock.calls[1][0];
+      expect(secondCallArgs.filters).toBeUndefined();
+    });
+
     it("getEvent returns new fields (alarms, categories, geo, attendee type)", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       const { parseIcsEvents } = await import("../ical.js");

@@ -152,8 +152,42 @@ export class CalDavService {
     calendar: any,
     uid: string,
   ): Promise<{ url: string; etag?: string; data?: string }> {
-    const objects = await client.fetchCalendarObjects({ calendar });
-    for (const obj of objects) {
+    // Use a CalDAV calendar-query REPORT with a UID text-match filter so the
+    // server returns only the target event instead of the entire calendar.
+    // The unfiltered scan (previous behavior) is pathological on calendars with
+    // many or large events: Mailbox.org in particular could hang beyond 60s
+    // when the total payload was large, producing a silent MCP deadlock on
+    // get_event / update_event / delete_event for any recently-used UID.
+    const uidFilter = {
+      "comp-filter": {
+        _attributes: { name: "VCALENDAR" },
+        "comp-filter": {
+          _attributes: { name: "VEVENT" },
+          "prop-filter": {
+            _attributes: { name: "UID" },
+            "text-match": { _text: uid },
+          },
+        },
+      },
+    };
+
+    const filtered = await client.fetchCalendarObjects({
+      calendar,
+      filters: uidFilter,
+    });
+    for (const obj of filtered) {
+      if (!obj.data) continue;
+      const events = parseIcsEvents(obj.data);
+      if (events.some((e) => e.uid === uid)) {
+        return obj as { url: string; etag?: string; data?: string };
+      }
+    }
+
+    // Defensive fallback: some CalDAV servers ignore UID prop-filter and
+    // return nothing. Fall back to a full scan so behavior isn't worse than
+    // before for non-conforming servers.
+    const all = await client.fetchCalendarObjects({ calendar });
+    for (const obj of all) {
       if (!obj.data) continue;
       const events = parseIcsEvents(obj.data);
       if (events.some((e) => e.uid === uid)) {
