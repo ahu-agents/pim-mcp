@@ -331,10 +331,12 @@ export function parseIcsEvents(
     if (vevent.attendee) {
       const attendeeList = Array.isArray(vevent.attendee) ? vevent.attendee : [vevent.attendee];
       for (const att of attendeeList) {
+        // RFC 5545: the mailto: URI scheme is case-insensitive. ical-generator
+        // emits uppercase "MAILTO:" which leaked past a case-sensitive strip.
         const email =
           typeof att === "string"
-            ? att.replace("mailto:", "")
-            : (att.val || "").replace("mailto:", "");
+            ? att.replace(/^mailto:/i, "")
+            : (att.val || "").replace(/^mailto:/i, "");
         const name = typeof att === "string" ? null : (att.params?.CN ?? null);
         const status =
           typeof att === "string" ? null : (att.params?.PARTSTAT?.toLowerCase() ?? null);
@@ -349,7 +351,7 @@ export function parseIcsEvents(
     if (vevent.organizer) {
       const org = vevent.organizer;
       organizer = {
-        email: (typeof org === "string" ? org : org.val || "").replace("mailto:", ""),
+        email: (typeof org === "string" ? org : org.val || "").replace(/^mailto:/i, ""),
         name: typeof org === "string" ? null : (org.params?.CN ?? null),
       };
     }

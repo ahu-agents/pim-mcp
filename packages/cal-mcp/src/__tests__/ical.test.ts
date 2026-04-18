@@ -286,6 +286,33 @@ describe("parseIcsEvents", () => {
     });
   });
 
+  it("strips mailto: URI scheme case-insensitively from attendee + organizer email", () => {
+    // ical-generator emits uppercase 'MAILTO:' which leaked past the prior
+    // case-sensitive strip. RFC 5545 / RFC 3986: URI schemes are case-insensitive.
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:mailto-case-test",
+      "DTSTART:20260501T140000Z",
+      "DTEND:20260501T150000Z",
+      "SUMMARY:Test",
+      "ORGANIZER;CN=Alice:MAILTO:alice@example.com",
+      "ATTENDEE;CN=Bob;ROLE=REQ-PARTICIPANT:MAILTO:bob@example.com",
+      "ATTENDEE;CN=Carol;ROLE=REQ-PARTICIPANT:Mailto:carol@example.com",
+      "ATTENDEE;CN=Dan;ROLE=REQ-PARTICIPANT:mailto:dan@example.com",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const events = parseIcsEvents(ics);
+    expect(events[0].organizer).toEqual({ email: "alice@example.com", name: "Alice" });
+    expect(events[0].attendees.map((a) => a.email)).toEqual([
+      "bob@example.com",
+      "carol@example.com",
+      "dan@example.com",
+    ]);
+  });
+
   it("formats event times in specified timezone", () => {
     const ics = [
       "BEGIN:VCALENDAR",
