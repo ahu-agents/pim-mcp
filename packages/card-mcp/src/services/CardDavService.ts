@@ -16,6 +16,21 @@ export interface AddressBook {
   ctag?: string;
 }
 
+export type DetailLevel = "summary" | "full";
+
+export type ResolveContactResult =
+  | { status: "resolved"; fullName: string; email: string }
+  | { status: "ambiguous"; candidates: Array<{ fullName: string; email: string; uid: string }> }
+  | { status: "not_found"; message: string };
+
+function applyDetailLevel(contact: Contact, level: DetailLevel): Contact {
+  if (level === "full") return contact;
+  return {
+    ...contact,
+    otherProperties: [],
+  };
+}
+
 export class CardDavService {
   private client: DAVClient | null = null;
   private config: CardDavConfig;
@@ -65,13 +80,19 @@ export class CardDavService {
     }
   }
 
-  async fetchContacts(addressBookUrl: string): Promise<Contact[]> {
+  async fetchContacts(
+    addressBookUrl: string,
+    opts: { detailLevel?: DetailLevel } = {},
+  ): Promise<Contact[]> {
+    const detailLevel = opts.detailLevel ?? "summary";
     const client = await this.ensureConnected();
     try {
       const vcards = await client.fetchVCards({
         addressBook: { url: addressBookUrl } as any,
       });
-      return vcards.filter((v) => v.data).map((v) => parseVCard(v.data!));
+      return vcards
+        .filter((v) => v.data)
+        .map((v) => applyDetailLevel(parseVCard(v.data!), detailLevel));
     } catch (error) {
       throw toPimError(error instanceof Error ? error : new Error(String(error)));
     }
@@ -157,8 +178,12 @@ export class CardDavService {
     }
   }
 
-  async searchContacts(addressBookUrl: string, query: string): Promise<Contact[]> {
-    const contacts = await this.fetchContacts(addressBookUrl);
+  async searchContacts(
+    addressBookUrl: string,
+    query: string,
+    opts: { detailLevel?: DetailLevel } = {},
+  ): Promise<Contact[]> {
+    const contacts = await this.fetchContacts(addressBookUrl, opts);
     const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
     if (tokens.length === 0) return contacts;
 
@@ -187,17 +212,31 @@ export class CardDavService {
     });
   }
 
-  async resolveContact(
-    addressBookUrl: string,
-    name: string,
-  ): Promise<{ fullName: string; email: string } | null> {
+  async resolveContact(addressBookUrl: string, name: string): Promise<ResolveContactResult> {
     const matches = await this.searchContacts(addressBookUrl, name);
-    for (const contact of matches) {
-      if (contact.emails.length > 0) {
-        return { fullName: contact.fullName, email: contact.emails[0].value };
-      }
+    const withEmail = matches.filter((c) => c.emails.length > 0);
+    if (withEmail.length === 0) {
+      return {
+        status: "not_found",
+        message: `No contact with email found matching "${name}"`,
+      };
     }
-    return null;
+    if (withEmail.length === 1) {
+      const c = withEmail[0];
+      return {
+        status: "resolved",
+        fullName: c.fullName,
+        email: c.emails[0].value,
+      };
+    }
+    const candidates = [...withEmail]
+      .sort((a, b) => a.fullName.localeCompare(b.fullName))
+      .map((c) => ({
+        fullName: c.fullName,
+        email: c.emails[0].value,
+        uid: c.uid,
+      }));
+    return { status: "ambiguous", candidates };
   }
 
   async disconnect(): Promise<void> {

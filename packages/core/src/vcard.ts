@@ -12,6 +12,12 @@ export interface PostalAddress {
   country?: string;
 }
 
+export interface SocialProfile {
+  type: string;
+  handle?: string;
+  url?: string;
+}
+
 export interface Contact {
   uid: string;
   fullName: string;
@@ -28,18 +34,92 @@ export interface Contact {
   birthday?: string;
   categories?: string[];
   note?: string;
+  socialProfiles?: SocialProfile[];
   otherProperties: string[];
+}
+
+const TYPE_NOISE_TOKENS = new Set(["internet", "voice", "pref"]);
+
+const APPLE_INTERNAL_PROPS = new Set([
+  "PRODID",
+  "REV",
+  "PHOTO",
+  "X-IMAGETYPE",
+  "X-IMAGEHASH",
+  "X-SHARED-PHOTO-DISPLAY-PREF",
+  "X-ADDRESSING-GRAMMAR",
+  "X-ABADR",
+]);
+
+/**
+ * Strip Apple iOS "itemN." group prefix from a line.
+ * Returns both the canonical line and the group id (or undefined).
+ * "item1.ADR;type=HOME:..." -> { canonical: "ADR;type=HOME:...", group: "item1" }
+ * "EMAIL:foo@bar" -> { canonical: "EMAIL:foo@bar", group: undefined }
+ */
+function stripItemPrefix(line: string): { canonical: string; group: string | undefined } {
+  const match = /^(item\d+)\.(.+)$/i.exec(line);
+  if (!match) return { canonical: line, group: undefined };
+  return { canonical: match[2], group: match[1].toLowerCase() };
+}
+
+/**
+ * Decode an Apple X-ABLabel value.
+ * "_$!<HomePage>!$_" -> "homepage"
+ * "School" -> "school"
+ */
+function decodeABLabel(raw: string): string {
+  const wrapped = /^_\$!<(.+)>!\$_$/.exec(raw.trim());
+  return (wrapped ? wrapped[1] : raw.trim()).toLowerCase();
+}
+
+/**
+ * Build a map of group id (e.g. "item1") -> decoded X-ABLabel value.
+ */
+function buildAbLabelMap(lines: string[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const rawLine of lines) {
+    const { canonical, group } = stripItemPrefix(rawLine);
+    if (!group) continue;
+    const upper = canonical.toUpperCase();
+    if (!upper.startsWith("X-ABLABEL:") && !upper.startsWith("X-ABLABEL;")) continue;
+    const colonIndex = canonical.indexOf(":");
+    if (colonIndex === -1) continue;
+    const decoded = decodeABLabel(canonical.slice(colonIndex + 1));
+    if (decoded) map.set(group, decoded);
+  }
+  return map;
+}
+
+/**
+ * Normalize a raw TYPE parameter value into a clean label.
+ * - Splits on comma or semicolon
+ * - Lowercases all tokens
+ * - Strips surrounding double-quote characters (from TYPE="internet" RFC 6868 form)
+ * - Drops noise tokens: internet, voice, pref
+ * - Joins remaining tokens with "/"
+ * Returns undefined when no meaningful token remains.
+ */
+export function normalizeType(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const tokens = raw
+    .split(/[,;]/)
+    .map((tok) => tok.trim().replace(/^"|"$/g, "").toLowerCase())
+    .filter((tok) => tok.length > 0 && !TYPE_NOISE_TOKENS.has(tok));
+  if (tokens.length === 0) return undefined;
+  return tokens.join("/");
 }
 
 export function parseVCard(data: string): Contact {
   const lines = unfoldLines(data);
+  const abLabels = buildAbLabelMap(lines);
 
   const uid = extractFirst(lines, "UID") ?? "";
   const fullName = extractFirst(lines, "FN") ?? "";
   const n = extractFirst(lines, "N");
-  const emails = extractTypedAll(lines, "EMAIL");
-  const phones = extractTypedAll(lines, "TEL");
-  const urls = extractTypedAll(lines, "URL");
+  const emails = extractTypedAll(lines, "EMAIL", abLabels);
+  const phones = extractTypedAll(lines, "TEL", abLabels);
+  const urls = extractTypedAll(lines, "URL", abLabels);
   const orgRaw = extractFirst(lines, "ORG");
   const organization = orgRaw ? orgRaw.split(";")[0].trim() || undefined : undefined;
   const title = extractFirst(lines, "TITLE");
@@ -49,6 +129,7 @@ export function parseVCard(data: string): Contact {
   const birthday = extractFirst(lines, "BDAY");
   const categoriesRaw = extractFirst(lines, "CATEGORIES");
   const categories = categoriesRaw ? categoriesRaw.split(",").map((c) => c.trim()) : undefined;
+  const socialProfiles = extractSocialProfiles(lines);
 
   const KNOWN = new Set([
     "BEGIN",
@@ -68,12 +149,16 @@ export function parseVCard(data: string): Contact {
     "NICKNAME",
     "CATEGORIES",
     "ROLE",
+    "X-ABLABEL",
+    "X-SOCIALPROFILE",
   ]);
   const otherProperties: string[] = [];
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const { canonical: line } = stripItemPrefix(rawLine);
     const propName = line.split(/[:;]/)[0].toUpperCase();
-    if (!KNOWN.has(propName) && line.trim()) {
-      otherProperties.push(line);
+    if (KNOWN.has(propName) || APPLE_INTERNAL_PROPS.has(propName)) continue;
+    if (rawLine.trim()) {
+      otherProperties.push(rawLine);
     }
   }
 
@@ -92,7 +177,7 @@ export function parseVCard(data: string): Contact {
     lastName,
     emails,
     phones,
-    addresses: extractAddresses(lines),
+    addresses: extractAddresses(lines, abLabels),
     urls,
     organization,
     title,
@@ -101,6 +186,7 @@ export function parseVCard(data: string): Contact {
     birthday,
     categories,
     note,
+    socialProfiles: socialProfiles.length > 0 ? socialProfiles : undefined,
     otherProperties,
   };
 }
@@ -160,6 +246,15 @@ export function buildVCard(contact: Contact): string {
   if (contact.note) {
     lines.push(`NOTE:${contact.note}`);
   }
+  if (contact.socialProfiles) {
+    for (const sp of contact.socialProfiles) {
+      const parts: string[] = [`type=${sp.type}`];
+      if (sp.handle) parts.push(`x-user=${sp.handle}`);
+      const params = parts.join(";");
+      const value = sp.url ?? (sp.handle ? `x-apple:${sp.handle}` : "");
+      lines.push(`X-SOCIALPROFILE;${params}:${value}`);
+    }
+  }
   for (const raw of contact.otherProperties) {
     lines.push(raw);
   }
@@ -178,7 +273,8 @@ function unfoldLines(data: string): string[] {
 
 /** Extract first matching property value (ignoring parameters like ;TYPE=HOME) */
 function extractFirst(lines: string[], property: string): string | undefined {
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const { canonical: line } = stripItemPrefix(rawLine);
     const upper = line.toUpperCase();
     if (upper.startsWith(`${property}:`) || upper.startsWith(`${property};`)) {
       const colonIndex = line.indexOf(":");
@@ -191,20 +287,26 @@ function extractFirst(lines: string[], property: string): string | undefined {
 }
 
 /** Extract all values for a property with optional TYPE parameter */
-function extractTypedAll(lines: string[], property: string): TypedValue[] {
+function extractTypedAll(
+  lines: string[],
+  property: string,
+  abLabels: Map<string, string>,
+): TypedValue[] {
   const results: TypedValue[] = [];
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const { canonical: line, group } = stripItemPrefix(rawLine);
     const upper = line.toUpperCase();
     if (upper.startsWith(`${property}:`) || upper.startsWith(`${property};`)) {
       const colonIndex = line.indexOf(":");
       if (colonIndex === -1) continue;
       const value = line.slice(colonIndex + 1).trim();
       const paramSection = line.slice(property.length, colonIndex);
-      const types: string[] = [];
-      for (const match of paramSection.matchAll(/TYPE=([^;,\s]+)/gi)) {
-        types.push(match[1].toLowerCase().trim());
+      const typeMatches: string[] = [];
+      for (const match of paramSection.matchAll(/TYPE=([^;:]+)/gi)) {
+        typeMatches.push(match[1]);
       }
-      const type = types.length > 0 ? types.join(",") : undefined;
+      const labelOverride = group ? abLabels.get(group) : undefined;
+      const type = labelOverride ?? normalizeType(typeMatches.join(","));
       results.push(type ? { type, value } : { value });
     }
   }
@@ -212,20 +314,22 @@ function extractTypedAll(lines: string[], property: string): TypedValue[] {
 }
 
 /** Extract ADR lines into PostalAddress objects */
-function extractAddresses(lines: string[]): PostalAddress[] {
+function extractAddresses(lines: string[], abLabels: Map<string, string>): PostalAddress[] {
   const results: PostalAddress[] = [];
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const { canonical: line, group } = stripItemPrefix(rawLine);
     const upper = line.toUpperCase();
     if (!upper.startsWith("ADR:") && !upper.startsWith("ADR;")) continue;
     const colonIndex = line.indexOf(":");
     if (colonIndex === -1) continue;
 
     const paramSection = line.slice(3, colonIndex);
-    const types: string[] = [];
-    for (const match of paramSection.matchAll(/TYPE=([^;,\s]+)/gi)) {
-      types.push(match[1].toLowerCase().trim());
+    const typeMatches: string[] = [];
+    for (const match of paramSection.matchAll(/TYPE=([^;:]+)/gi)) {
+      typeMatches.push(match[1]);
     }
-    const type = types.length > 0 ? types.join(",") : undefined;
+    const labelOverride = group ? abLabels.get(group) : undefined;
+    const type = labelOverride ?? normalizeType(typeMatches.join(","));
 
     const parts = line.slice(colonIndex + 1).split(";");
     const streetParts = [parts[0], parts[1], parts[2]].filter(Boolean);
@@ -243,6 +347,31 @@ function extractAddresses(lines: string[]): PostalAddress[] {
     if (postalCode) addr.postalCode = postalCode;
     if (country) addr.country = country;
     results.push(addr);
+  }
+  return results;
+}
+
+/** Extract X-SOCIALPROFILE lines into SocialProfile objects */
+function extractSocialProfiles(lines: string[]): SocialProfile[] {
+  const results: SocialProfile[] = [];
+  for (const rawLine of lines) {
+    const { canonical: line } = stripItemPrefix(rawLine);
+    const upper = line.toUpperCase();
+    if (!upper.startsWith("X-SOCIALPROFILE;") && !upper.startsWith("X-SOCIALPROFILE:")) continue;
+    const colonIndex = line.indexOf(":");
+    if (colonIndex === -1) continue;
+    const paramSection = line.slice("X-SOCIALPROFILE".length, colonIndex);
+    const value = line.slice(colonIndex + 1).trim();
+
+    const typeMatch = /type=([^;:]+)/i.exec(paramSection);
+    const userMatch = /x-user=([^;:]+)/i.exec(paramSection);
+    const type = typeMatch ? typeMatch[1].trim().toLowerCase() : "";
+    if (!type) continue;
+
+    const profile: SocialProfile = { type };
+    if (userMatch) profile.handle = userMatch[1].trim();
+    if (value && !/^x-apple:/i.test(value)) profile.url = value;
+    results.push(profile);
   }
   return results;
 }

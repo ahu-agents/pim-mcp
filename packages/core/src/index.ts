@@ -26,6 +26,7 @@ export {
   type Contact,
   type TypedValue,
   type PostalAddress,
+  type SocialProfile,
   buildVCard,
   parseVCard,
 } from "./vcard.js";

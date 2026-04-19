@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Contact, buildVCard, parseVCard } from "../vcard.js";
+import { type Contact, buildVCard, normalizeType, parseVCard } from "../vcard.js";
 
 const SAMPLE_VCARD = `BEGIN:VCARD
 VERSION:3.0
@@ -53,7 +53,7 @@ describe("parseVCard", () => {
     ]);
     expect(contact.phones).toEqual([
       { type: "cell", value: "+1-555-0100" },
-      { type: "work,voice", value: "+1-555-0100" },
+      { type: "work", value: "+1-555-0100" },
     ]);
     expect(contact.urls).toEqual([
       { type: "home", value: "https://example.com" },
@@ -121,16 +121,13 @@ describe("parseVCard", () => {
   });
 
   it("captures unknown properties in otherProperties", () => {
-    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:r1\nFN:Raw Test\nPHOTO;VALUE=uri:https://example.com/photo.jpg\nX-SOCIALPROFILE;TYPE=twitter:@test\nEND:VCARD`;
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:r1\nFN:Raw Test\nX-CUSTOM-PROP:weird\nX-ANOTHER:value\nEND:VCARD`;
     const contact = parseVCard(vcard);
-    expect(contact.otherProperties).toEqual([
-      "PHOTO;VALUE=uri:https://example.com/photo.jpg",
-      "X-SOCIALPROFILE;TYPE=twitter:@test",
-    ]);
+    expect(contact.otherProperties).toEqual(["X-CUSTOM-PROP:weird", "X-ANOTHER:value"]);
   });
 
   it("round-trips otherProperties through build and parse", () => {
-    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:rt1\nFN:Roundtrip\nPHOTO;VALUE=uri:https://example.com/photo.jpg\nX-CUSTOM:hello\nEND:VCARD`;
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nUID:rt1\nFN:Roundtrip\nX-CUSTOM:hello\nEND:VCARD`;
     const contact = parseVCard(vcard);
     const rebuilt = buildVCard(contact);
     const reparsed = parseVCard(rebuilt);
@@ -246,5 +243,336 @@ describe("buildVCard", () => {
     expect(vcard).not.toContain("EMAIL");
     expect(vcard).not.toContain("TEL");
     expect(vcard).not.toContain("ORG");
+  });
+});
+
+describe("buildVCard round-trip", () => {
+  it("preserves socialProfiles through parse -> build -> parse", () => {
+    const original = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-rt",
+      "FN:Patrick",
+      "X-SOCIALPROFILE;type=Instagram;x-user=example_user:x-apple:example_user",
+      "X-SOCIALPROFILE;type=twitter;x-user=testhandle:http://twitter.com/testhandle",
+      "END:VCARD",
+    ].join("\r\n");
+    const first = parseVCard(original);
+    const rebuilt = buildVCard(first);
+    const second = parseVCard(rebuilt);
+    expect(second.socialProfiles).toEqual(first.socialProfiles);
+  });
+
+  it("serializes socialProfiles with handle and url when present", () => {
+    const contact = {
+      uid: "u",
+      fullName: "X",
+      emails: [],
+      phones: [],
+      addresses: [],
+      urls: [],
+      otherProperties: [],
+      socialProfiles: [
+        { type: "twitter", handle: "a", url: "https://twitter.com/a" },
+        { type: "instagram", handle: "b" },
+      ],
+    };
+    const built = buildVCard(contact as any);
+    expect(built).toContain("X-SOCIALPROFILE;type=twitter;x-user=a:https://twitter.com/a");
+    expect(built).toContain("X-SOCIALPROFILE;type=instagram;x-user=b:x-apple:b");
+  });
+});
+
+describe("normalizeType", () => {
+  it("drops internet/voice/pref noise tokens", () => {
+    expect(normalizeType("internet,work,pref")).toBe("work");
+    expect(normalizeType("cell,voice,pref")).toBe("cell");
+    expect(normalizeType("internet,home")).toBe("home");
+  });
+
+  it("strips surrounding double quotes from TYPE values", () => {
+    expect(normalizeType('"internet')).toBe(undefined); // noise-only after strip
+    expect(normalizeType('"work"')).toBe("work");
+    expect(normalizeType('"internet","work"')).toBe("work");
+  });
+
+  it("joins multiple meaningful tokens with /", () => {
+    expect(normalizeType("home,fax")).toBe("home/fax");
+    expect(normalizeType("work,cell")).toBe("work/cell");
+  });
+
+  it("lowercases input tokens", () => {
+    expect(normalizeType("HOME")).toBe("home");
+    expect(normalizeType("Work,CELL")).toBe("work/cell");
+  });
+
+  it("returns undefined when empty or only noise", () => {
+    expect(normalizeType("")).toBe(undefined);
+    expect(normalizeType("internet,pref,voice")).toBe(undefined);
+    expect(normalizeType(undefined)).toBe(undefined);
+  });
+
+  it("handles semicolon-separated input", () => {
+    expect(normalizeType("home;fax")).toBe("home/fax");
+  });
+});
+
+describe("parseVCard with iOS itemN groups", () => {
+  it("parses item1.ADR into addresses[]", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-1",
+      "FN:Patrick Wilson",
+      "item1.ADR;type=HOME;type=pref:;;789 Pine Rd;Anytown;ST;00000;United States",
+      "item1.X-ABADR:us",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.addresses).toHaveLength(1);
+    expect(contact.addresses[0]).toMatchObject({
+      type: "home",
+      street: "789 Pine Rd",
+      city: "Anytown",
+      state: "TX",
+      postalCode: "00000",
+      country: "United States",
+    });
+  });
+
+  it("parses itemN.EMAIL and itemN.TEL with clean types", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-2",
+      "FN:Patrick Wilson",
+      "item2.EMAIL;type=INTERNET;type=work;type=pref:alice@example.com",
+      "item3.TEL;type=CELL;type=VOICE;type=pref:+1-555-0100",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.emails).toEqual([{ type: "work", value: "alice@example.com" }]);
+    expect(contact.phones).toEqual([{ type: "cell", value: "+1-555-0100" }]);
+  });
+
+  it("parses itemN.URL", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-3",
+      "FN:X",
+      "item1.URL;type=WORK:https://example.com",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.urls).toEqual([{ type: "work", value: "https://example.com" }]);
+  });
+});
+
+describe("parseVCard X-ABLabel resolution", () => {
+  it("decodes _$!<HomePage>!$_ wrapped label for URL type", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-1",
+      "FN:X",
+      "item1.URL;type=pref:https://example.com",
+      "item1.X-ABLabel:_$!<HomePage>!$_",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.urls).toEqual([{ type: "homepage", value: "https://example.com" }]);
+  });
+
+  it("uses raw X-ABLabel when no wrapper syntax", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-2",
+      "FN:X",
+      "item1.TEL;type=voice:+1-555-0100",
+      "item1.X-ABLabel:School",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.phones).toEqual([{ type: "school", value: "+1-555-0100" }]);
+  });
+
+  it("falls through to normalized TYPE when X-ABLabel absent", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-3",
+      "FN:X",
+      "item1.EMAIL;type=INTERNET;type=HOME:foo@bar.com",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.emails).toEqual([{ type: "home", value: "foo@bar.com" }]);
+  });
+
+  it("falls back to TYPE when X-ABLabel is empty", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-4",
+      "FN:X",
+      "item1.EMAIL;type=WORK:a@b.com",
+      "item1.X-ABLabel:",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.emails).toEqual([{ type: "work", value: "a@b.com" }]);
+  });
+});
+
+describe("parseVCard X-SOCIALPROFILE", () => {
+  it("parses Instagram entry with x-user handle and x-apple URL (drops URL)", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-1",
+      "FN:X",
+      "X-SOCIALPROFILE;type=Instagram;x-user=example_user:x-apple:example_user",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.socialProfiles).toEqual([{ type: "instagram", handle: "example_user" }]);
+  });
+
+  it("keeps URL when value is http(s)", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-2",
+      "FN:X",
+      "X-SOCIALPROFILE;type=twitter;x-user=testhandle:http://twitter.com/testhandle",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.socialProfiles).toEqual([
+      { type: "twitter", handle: "testhandle", url: "http://twitter.com/testhandle" },
+    ]);
+  });
+
+  it("handles multiple social profiles and preserves order", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-3",
+      "FN:X",
+      "X-SOCIALPROFILE;type=Instagram;x-user=foo:x-apple:foo",
+      "X-SOCIALPROFILE;type=LinkedIn;x-user=bar:https://linkedin.com/in/bar",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    expect(contact.socialProfiles).toHaveLength(2);
+    expect(contact.socialProfiles?.[0].type).toBe("instagram");
+    expect(contact.socialProfiles?.[1].type).toBe("linkedin");
+    expect(contact.socialProfiles?.[1].url).toBe("https://linkedin.com/in/bar");
+  });
+});
+
+describe("parseVCard Apple internals filtering", () => {
+  it("strips photo, prodid, rev, and other Apple internals from otherProperties", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "UID:test-1",
+      "FN:X",
+      "PRODID:-//Apple Inc.//iOS 26.0//EN",
+      "REV:2024-09-16T22:05:13Z",
+      "PHOTO;ENCODING=b;TYPE=JPEG:/9j/4AAQSkZJRgABAQAASABIAAD",
+      "X-IMAGETYPE:PHOTO",
+      "X-IMAGEHASH:+t54yzQVDfamrN6MVyxA7A==",
+      "X-SHARED-PHOTO-DISPLAY-PREF:AUTOUPDATE",
+      "item1.X-ADDRESSING-GRAMMAR:encryptedbase64blob==",
+      "item1.X-ABADR:us",
+      "X-UNKNOWN-CUSTOM:preserve-me",
+      "END:VCARD",
+    ].join("\r\n");
+    const contact = parseVCard(vcard);
+    const joined = contact.otherProperties.join("|");
+    expect(joined).not.toContain("PRODID");
+    expect(joined).not.toContain("REV:");
+    expect(joined).not.toContain("PHOTO;");
+    expect(joined).not.toContain("X-IMAGETYPE");
+    expect(joined).not.toContain("X-IMAGEHASH");
+    expect(joined).not.toContain("X-SHARED-PHOTO-DISPLAY-PREF");
+    expect(joined).not.toContain("X-ADDRESSING-GRAMMAR");
+    expect(joined).not.toContain("X-ABADR");
+    expect(joined).toContain("X-UNKNOWN-CUSTOM");
+  });
+});
+
+describe("parseVCard iOS golden (Patrick-shaped)", () => {
+  it("matches the iOS Contacts phone view 1:1", () => {
+    const vcard = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "PRODID:-//Apple Inc.//iOS 26.0//EN",
+      "N:Wilson;Patrick;;;",
+      "FN:Patrick Wilson",
+      "NICKNAME:Alice",
+      "item2.EMAIL;type=INTERNET;type=WORK;type=pref:alice@example.com",
+      "item3.EMAIL;type=INTERNET;type=HOME:alice@example.com",
+      "item4.TEL;type=CELL;type=VOICE;type=pref:+1-555-0100",
+      "item5.TEL;type=WORK;type=VOICE:+1-555-0100",
+      "item1.ADR;type=HOME;type=pref:;;789 Pine Rd;Anytown;ST;00000;United States",
+      "item1.X-ABADR:us",
+      "BDAY:1990-01-01",
+      "NOTE:TI Intern\\nGoing out friend\\nDallas\\nFriends\\n",
+      "X-SOCIALPROFILE;type=Instagram;x-user=example_user:x-apple:example_user",
+      "X-SOCIALPROFILE;type=twitter;x-user=testhandle:http://twitter.com/testhandle",
+      "PHOTO;ENCODING=b;TYPE=JPEG:fakebase64photodata",
+      "REV:2024-09-16T22:05:13Z",
+      "X-IMAGETYPE:PHOTO",
+      "X-IMAGEHASH:+t54yzQVDfamrN6MVyxA7A==",
+      "X-SHARED-PHOTO-DISPLAY-PREF:AUTOUPDATE",
+      "UID:00000000-0000-0000-0000-000000000001",
+      "END:VCARD",
+    ].join("\r\n");
+
+    const contact = parseVCard(vcard);
+
+    expect(contact).toMatchObject({
+      uid: "00000000-0000-0000-0000-000000000001",
+      fullName: "Patrick Wilson",
+      firstName: "Patrick",
+      lastName: "Wilson",
+      nickname: "Alice",
+      emails: [
+        { type: "work", value: "alice@example.com" },
+        { type: "home", value: "alice@example.com" },
+      ],
+      phones: [
+        { type: "cell", value: "+1-555-0100" },
+        { type: "work", value: "+1-555-0100" },
+      ],
+      addresses: [
+        {
+          type: "home",
+          street: "789 Pine Rd",
+          city: "Anytown",
+          state: "TX",
+          postalCode: "00000",
+          country: "United States",
+        },
+      ],
+      birthday: "1990-01-01",
+      socialProfiles: [
+        { type: "instagram", handle: "example_user" },
+        { type: "twitter", handle: "testhandle", url: "http://twitter.com/testhandle" },
+      ],
+    });
+    expect(contact.note).toContain("TI Intern");
+    const op = contact.otherProperties.join("|");
+    expect(op).not.toContain("PRODID");
+    expect(op).not.toContain("REV:");
+    expect(op).not.toContain("PHOTO");
+    expect(op).not.toContain("X-IMAGETYPE");
+    expect(op).not.toContain("X-IMAGEHASH");
+    expect(op).not.toContain("X-SHARED-PHOTO-DISPLAY-PREF");
+    expect(op).not.toContain("X-ABADR");
   });
 });

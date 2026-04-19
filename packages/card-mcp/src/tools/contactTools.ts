@@ -27,6 +27,12 @@ export const CONTACT_TOOLS: Tool[] = [
           type: "string",
           description: "Address book URL. If omitted, uses the first available address book.",
         },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "full"],
+          description:
+            "Level of detail. 'summary' (default) omits photo binary and raw otherProperties. 'full' returns the complete parsed vCard shape.",
+        },
       },
     },
   },
@@ -43,6 +49,12 @@ export const CONTACT_TOOLS: Tool[] = [
         addressBook: {
           type: "string",
           description: "Address book URL. If omitted, uses the first available address book.",
+        },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "full"],
+          description:
+            "Level of detail. 'summary' (default) omits photo binary and raw otherProperties. 'full' returns the complete parsed vCard shape.",
         },
       },
       required: ["uid"],
@@ -226,7 +238,7 @@ export const CONTACT_TOOLS: Tool[] = [
   {
     name: "resolve_contact",
     description:
-      "Given a person's name, find their email address. Returns the best match's full name and primary email. Use this for 'send email to [name]' workflows.",
+      "Given a person's name, resolve to email. Returns { status: 'resolved', fullName, email } on a single match; { status: 'ambiguous', candidates: [...] } when multiple contacts match (caller must disambiguate); { status: 'not_found', message } when no contact with email matches.",
     inputSchema: {
       type: "object",
       properties: {
@@ -258,15 +270,17 @@ export async function handleContactTool(
     switch (name) {
       case "list_contacts": {
         const query = args.query as string | undefined;
+        const detailLevel = (args.detail_level as "summary" | "full" | undefined) ?? "summary";
         const contacts = query
-          ? await service.searchContacts(addressBookUrl, query)
-          : await service.fetchContacts(addressBookUrl);
+          ? await service.searchContacts(addressBookUrl, query, { detailLevel })
+          : await service.fetchContacts(addressBookUrl, { detailLevel });
         return ok(JSON.stringify(contacts, null, 2));
       }
 
       case "get_contact": {
         const uid = args.uid as string;
-        const contacts = await service.fetchContacts(addressBookUrl);
+        const detailLevel = (args.detail_level as "summary" | "full" | undefined) ?? "summary";
+        const contacts = await service.fetchContacts(addressBookUrl, { detailLevel });
         const contact = contacts.find((c) => c.uid === uid);
         if (!contact) {
           throw new ContactError(`Contact ${uid} not found`, ErrorCode.CONTACT_NOT_FOUND, uid);
@@ -330,14 +344,6 @@ export async function handleContactTool(
       case "resolve_contact": {
         const name = args.name as string;
         const result = await service.resolveContact(addressBookUrl, name);
-        if (!result) {
-          return ok(
-            JSON.stringify({
-              status: "not_found",
-              message: `No contact with email found matching "${name}"`,
-            }),
-          );
-        }
         return ok(JSON.stringify(result));
       }
 

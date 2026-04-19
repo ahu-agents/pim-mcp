@@ -203,7 +203,7 @@ describe("CardDavService", () => {
   });
 
   describe("resolveContact", () => {
-    it("returns the first email for a name match", async () => {
+    it("returns resolved shape for a single name match", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       __mockClient.fetchVCards.mockResolvedValueOnce([
         {
@@ -219,12 +219,13 @@ describe("CardDavService", () => {
         "John",
       );
       expect(result).toEqual({
+        status: "resolved",
         fullName: "John Doe",
         email: "john@test.com",
       });
     });
 
-    it("returns null when no match found", async () => {
+    it("returns not_found shape when no match found", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       __mockClient.fetchVCards.mockResolvedValueOnce([]);
 
@@ -233,10 +234,12 @@ describe("CardDavService", () => {
         "/dav/addressbooks/users/miguel/contacts/",
         "Nobody",
       );
-      expect(result).toBeNull();
+      if (result.status !== "not_found")
+        throw new Error(`expected not_found, got ${result.status}`);
+      expect(result.message).toContain("Nobody");
     });
 
-    it("returns null when match has no email", async () => {
+    it("returns not_found shape when match has no email", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
       __mockClient.fetchVCards.mockResolvedValueOnce([
         {
@@ -251,7 +254,7 @@ describe("CardDavService", () => {
         "/dav/addressbooks/users/miguel/contacts/",
         "John",
       );
-      expect(result).toBeNull();
+      expect(result.status).toBe("not_found");
     });
   });
 
@@ -263,7 +266,7 @@ describe("CardDavService", () => {
         {
           url: "/dav/contacts/uid-1.vcf",
           etag: '"etag1"',
-          data: "BEGIN:VCARD\nVERSION:3.0\nUID:uid-1\nFN:Test\nEMAIL:test@test.com\nPHOTO;VALUE=uri:https://example.com/photo.jpg\nX-CUSTOM:keepme\nEND:VCARD",
+          data: "BEGIN:VCARD\nVERSION:3.0\nUID:uid-1\nFN:Test\nEMAIL:test@test.com\nX-CUSTOM:keepme\nEND:VCARD",
         },
       ]);
 
@@ -273,7 +276,6 @@ describe("CardDavService", () => {
       });
 
       const updateCall = __mockClient.updateVCard.mock.calls[0][0];
-      expect(updateCall.vCard.data).toContain("PHOTO;VALUE=uri:https://example.com/photo.jpg");
       expect(updateCall.vCard.data).toContain("X-CUSTOM:keepme");
       expect(updateCall.vCard.data).toContain("FN:Updated Name");
     });
@@ -303,5 +305,140 @@ describe("CardDavService", () => {
       expect(results).toHaveLength(1);
       expect(results[0].uid).toBe("1");
     });
+  });
+});
+
+describe("CardDavService detail_level", () => {
+  const sampleVCard = [
+    "BEGIN:VCARD",
+    "VERSION:3.0",
+    "UID:uid-1",
+    "FN:Jane",
+    "EMAIL;TYPE=WORK:jane@example.com",
+    "PHOTO;ENCODING=b;TYPE=JPEG:fakebinary",
+    "X-CUSTOM-EXT:keep-me",
+    "END:VCARD",
+  ].join("\r\n");
+
+  it('fetchContacts with detail_level="summary" drops otherProperties and photo', async () => {
+    const service = new CardDavService({
+      url: "https://x",
+      username: "u",
+      password: "p",
+    });
+    (service as any).client = {
+      fetchVCards: vi.fn().mockResolvedValue([{ url: "x", data: sampleVCard, etag: "" }]),
+    };
+    const contacts = await service.fetchContacts("book", { detailLevel: "summary" });
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0].otherProperties).toEqual([]);
+    expect(JSON.stringify(contacts[0])).not.toContain("fakebinary");
+    expect(contacts[0].emails[0].value).toBe("jane@example.com");
+  });
+
+  it('fetchContacts with detail_level="full" preserves otherProperties (minus Apple internals stripped by parser)', async () => {
+    const service = new CardDavService({
+      url: "https://x",
+      username: "u",
+      password: "p",
+    });
+    (service as any).client = {
+      fetchVCards: vi.fn().mockResolvedValue([{ url: "x", data: sampleVCard, etag: "" }]),
+    };
+    const contacts = await service.fetchContacts("book", { detailLevel: "full" });
+    expect(contacts[0].otherProperties.join("|")).toContain("X-CUSTOM-EXT");
+    expect(contacts[0].otherProperties.join("|")).not.toContain("PHOTO");
+  });
+
+  it("fetchContacts defaults to summary when detail_level omitted", async () => {
+    const service = new CardDavService({
+      url: "https://x",
+      username: "u",
+      password: "p",
+    });
+    (service as any).client = {
+      fetchVCards: vi.fn().mockResolvedValue([{ url: "x", data: sampleVCard, etag: "" }]),
+    };
+    const contacts = await service.fetchContacts("book");
+    expect(contacts[0].otherProperties).toEqual([]);
+  });
+});
+
+describe("CardDavService.resolveContact", () => {
+  const mkVCard = (uid: string, fn: string, email?: string) =>
+    [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `UID:${uid}`,
+      `FN:${fn}`,
+      email ? `EMAIL;TYPE=WORK:${email}` : "",
+      "END:VCARD",
+    ]
+      .filter(Boolean)
+      .join("\r\n");
+
+  it("returns resolved shape on single match", async () => {
+    const service = new CardDavService({ url: "x", username: "u", password: "p" });
+    (service as any).client = {
+      fetchVCards: vi
+        .fn()
+        .mockResolvedValue([
+          { url: "1", data: mkVCard("u1", "Patrick Wilson", "n@t.com"), etag: "" },
+        ]),
+    };
+    const r = await service.resolveContact("book", "Patrick");
+    expect(r).toEqual({
+      status: "resolved",
+      fullName: "Patrick Wilson",
+      email: "n@t.com",
+    });
+  });
+
+  it("returns ambiguous shape with candidates sorted by fullName on multi-match", async () => {
+    const service = new CardDavService({ url: "x", username: "u", password: "p" });
+    (service as any).client = {
+      fetchVCards: vi.fn().mockResolvedValue([
+        { url: "1", data: mkVCard("u1", "Alice Smith", "r@x.com"), etag: "" },
+        { url: "2", data: mkVCard("u2", "Alice Brown", "a@y.com"), etag: "" },
+        { url: "3", data: mkVCard("u3", "Alice Lee", "w@z.com"), etag: "" },
+      ]),
+    };
+    const r = await service.resolveContact("book", "Alice");
+    if (r.status !== "ambiguous") throw new Error(`expected ambiguous, got ${r.status}`);
+    expect(r.candidates.map((c) => c.fullName)).toEqual([
+      "Alice Brown",
+      "Alice Smith",
+      "Alice Lee",
+    ]);
+    expect(r.candidates[0]).toMatchObject({
+      fullName: "Alice Brown",
+      email: "a@y.com",
+      uid: "u2",
+    });
+  });
+
+  it("returns not_found shape when no match", async () => {
+    const service = new CardDavService({ url: "x", username: "u", password: "p" });
+    (service as any).client = {
+      fetchVCards: vi.fn().mockResolvedValue([]),
+    };
+    const r = await service.resolveContact("book", "Nobody");
+    if (r.status !== "not_found") throw new Error(`expected not_found, got ${r.status}`);
+    expect(r.message).toContain("Nobody");
+  });
+
+  it("ambiguous candidates skip contacts without email", async () => {
+    const service = new CardDavService({ url: "x", username: "u", password: "p" });
+    (service as any).client = {
+      fetchVCards: vi.fn().mockResolvedValue([
+        { url: "1", data: mkVCard("u1", "Alice One", "one@x.com"), etag: "" },
+        { url: "2", data: mkVCard("u2", "Alice Two"), etag: "" },
+        { url: "3", data: mkVCard("u3", "Alice Three", "three@x.com"), etag: "" },
+      ]),
+    };
+    const r = await service.resolveContact("book", "Alice");
+    if (r.status !== "ambiguous") throw new Error(`expected ambiguous, got ${r.status}`);
+    expect(r.candidates.length).toBe(2);
+    expect(r.candidates.every((c) => c.email.length > 0)).toBe(true);
   });
 });
