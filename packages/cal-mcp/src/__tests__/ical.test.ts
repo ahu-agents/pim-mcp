@@ -839,14 +839,16 @@ describe("generateEventIcs", () => {
     expect(ics).toContain("Team lunch");
   });
 
-  it("includes attendees when provided", () => {
+  it("includes attendees when provided (email only, no CN)", () => {
     const ics = generateEventIcs({
       title: "Meeting",
       start: "2026-03-10T14:00:00Z",
       end: "2026-03-10T15:00:00Z",
-      attendees: [{ email: "bob@example.com", name: "Bob" }],
+      attendees: [{ email: "bob@example.com" }],
     });
     expect(ics).toContain("bob@example.com");
+    // CN is intentionally never emitted — display name is resolved server-side
+    expect(ics).not.toContain("CN=");
   });
 
   it("generates all-day event when all_day is true", () => {

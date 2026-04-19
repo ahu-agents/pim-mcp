@@ -169,12 +169,15 @@ export const CALENDAR_TOOLS: Tool[] = [
           items: {
             type: "object",
             properties: {
-              email: { type: "string" },
-              name: { type: "string" },
+              email: {
+                type: "string",
+                description:
+                  "Attendee email address. Display name is resolved server-side from the invitee's address book.",
+              },
             },
             required: ["email"],
           },
-          description: "List of attendees",
+          description: "List of attendee email addresses to invite.",
         },
         alarms: {
           type: "array",
@@ -183,6 +186,7 @@ export const CALENDAR_TOOLS: Tool[] = [
             properties: {
               type: { type: "string", enum: ["relative", "absolute"], description: "Alarm type" },
               trigger: {
+                type: ["string", "number"],
                 description:
                   "Seconds offset (negative=before event) for relative, or ISO 8601 datetime for absolute",
               },
@@ -193,7 +197,7 @@ export const CALENDAR_TOOLS: Tool[] = [
         },
         categories: {
           type: "array",
-          items: { type: "string" },
+          items: { type: "string", description: "Category / tag name" },
           description: "Event categories/tags",
         },
         recurrence_rule: {
@@ -242,12 +246,15 @@ export const CALENDAR_TOOLS: Tool[] = [
           items: {
             type: "object",
             properties: {
-              email: { type: "string" },
-              name: { type: "string" },
+              email: {
+                type: "string",
+                description:
+                  "Attendee email address. Display name is resolved server-side from the invitee's address book.",
+              },
             },
             required: ["email"],
           },
-          description: "New attendee list (replaces existing)",
+          description: "New attendee list (replaces existing).",
         },
         alarms: {
           type: "array",
@@ -256,6 +263,7 @@ export const CALENDAR_TOOLS: Tool[] = [
             properties: {
               type: { type: "string", enum: ["relative", "absolute"], description: "Alarm type" },
               trigger: {
+                type: ["string", "number"],
                 description:
                   "Seconds offset (negative=before event) for relative, or ISO 8601 datetime for absolute",
               },
@@ -266,7 +274,7 @@ export const CALENDAR_TOOLS: Tool[] = [
         },
         categories: {
           type: "array",
-          items: { type: "string" },
+          items: { type: "string", description: "Category / tag name" },
           description: "Event categories/tags",
         },
         occurrence_date: {
@@ -348,12 +356,15 @@ export const CALENDAR_TOOLS: Tool[] = [
                 items: {
                   type: "object",
                   properties: {
-                    email: { type: "string", description: "Attendee email address" },
-                    name: { type: "string", description: "Attendee display name" },
+                    email: {
+                      type: "string",
+                      description:
+                        "Attendee email address. Display name is resolved server-side from the invitee's address book.",
+                    },
                   },
                   required: ["email"],
                 },
-                description: "List of attendees",
+                description: "List of attendee email addresses to invite.",
               },
               alarms: {
                 type: "array",
@@ -376,7 +387,7 @@ export const CALENDAR_TOOLS: Tool[] = [
               },
               categories: {
                 type: "array",
-                items: { type: "string" },
+                items: { type: "string", description: "Category / tag name" },
                 description: "Event categories/tags",
               },
               recurrence_rule: {
@@ -420,7 +431,7 @@ export const CALENDAR_TOOLS: Tool[] = [
       properties: {
         calendars: {
           type: "array",
-          items: { type: "string" },
+          items: { type: "string", description: "Provider-prefixed calendar ID" },
           description:
             "Provider-prefixed calendar IDs to check availability against. If omitted, uses all calendars.",
         },
@@ -446,7 +457,7 @@ export const CALENDAR_TOOLS: Tool[] = [
         },
         exclude_calendars: {
           type: "array",
-          items: { type: "string" },
+          items: { type: "string", description: "Provider-prefixed calendar ID to exclude" },
           description: "Calendar IDs to exclude from busy time calculation",
         },
         include_all_day_as_busy: {
@@ -567,7 +578,7 @@ export async function handleCalendarTool(
             all_day: (args.all_day as boolean) ?? false,
             location: args.location as string | undefined,
             description: args.description as string | undefined,
-            attendees: args.attendees as Array<{ email: string; name?: string }> | undefined,
+            attendees: args.attendees as Array<{ email: string }> | undefined,
             alarms: args.alarms as
               | Array<{ type: "relative" | "absolute"; trigger: number | string }>
               | undefined,
@@ -616,7 +627,7 @@ export async function handleCalendarTool(
             all_day?: boolean;
             location?: string;
             description?: string;
-            attendees?: Array<{ email: string; name?: string }>;
+            attendees?: Array<{ email: string }>;
             alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
             categories?: string[];
           } = {};
@@ -627,7 +638,7 @@ export async function handleCalendarTool(
           if (args.location !== undefined) overrides.location = args.location as string;
           if (args.description !== undefined) overrides.description = args.description as string;
           if (args.attendees !== undefined)
-            overrides.attendees = args.attendees as Array<{ email: string; name?: string }>;
+            overrides.attendees = args.attendees as Array<{ email: string }>;
           if (args.alarms !== undefined)
             overrides.alarms = args.alarms as Array<{
               type: "relative" | "absolute";
@@ -678,7 +689,7 @@ export async function handleCalendarTool(
           location: (args.location as string) ?? existing.location ?? undefined,
           description: (args.description as string) ?? existing.description ?? undefined,
           attendees:
-            (args.attendees as Array<{ email: string; name?: string }> | undefined) ??
+            (args.attendees as Array<{ email: string }> | undefined) ??
             existing.attendees?.map((a: { email: string; name?: string | null }) => ({
               email: a.email,
               name: a.name ?? undefined,
@@ -764,7 +775,7 @@ export async function handleCalendarTool(
           all_day?: boolean;
           location?: string;
           description?: string;
-          attendees?: Array<{ email: string; name?: string }>;
+          attendees?: Array<{ email: string }>;
           alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
           categories?: string[];
           recurrence_rule?: string;

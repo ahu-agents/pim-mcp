@@ -49,7 +49,7 @@ export interface EventCreateProps {
   all_day?: boolean;
   location?: string;
   description?: string;
-  attendees?: Array<{ email: string; name?: string }>;
+  attendees?: Array<{ email: string }>;
   uid?: string;
   timezone?: string;
   alarms?: Array<{
@@ -507,7 +507,9 @@ export function generateEventIcs(props: EventCreateProps): string {
 
   if (props.attendees) {
     for (const att of props.attendees) {
-      event.createAttendee({ email: att.email, name: att.name });
+      // No CN is sent — display name is resolved server-side from the
+      // invitee's address book (standard CalDAV behavior).
+      event.createAttendee({ email: att.email });
     }
   }
 
@@ -556,7 +558,7 @@ export function createExceptionVevent(
     all_day?: boolean;
     location?: string;
     description?: string;
-    attendees?: Array<{ email: string; name?: string }>;
+    attendees?: Array<{ email: string }>;
     alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
     categories?: string[];
   },
@@ -627,8 +629,8 @@ export function createExceptionVevent(
   const attendees = overrides.attendees ?? master.attendees;
   if (attendees) {
     for (const att of attendees) {
-      const cn = att.name ? `;CN=${att.name}` : "";
-      lines.push(`ATTENDEE${cn}:mailto:${att.email}`);
+      // No CN emitted — display name is resolved server-side.
+      lines.push(`ATTENDEE:mailto:${att.email}`);
     }
   }
 
