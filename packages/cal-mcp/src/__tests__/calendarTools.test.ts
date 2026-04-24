@@ -12,6 +12,7 @@ const mockService = {
   deleteEvent: vi.fn(),
   findFreeSlots: vi.fn(),
   fetchRawCalendarObject: vi.fn(),
+  getAccountEmail: vi.fn(() => "user@example.com"),
 };
 
 describe("calendarTools", () => {
@@ -664,6 +665,216 @@ describe("calendarTools", () => {
       const icsArg = mockService.updateEvent.mock.calls[0][2];
       expect(icsArg).toContain("EXDATE");
       expect(icsArg).not.toContain("RECURRENCE-ID");
+    });
+  });
+
+  describe("ORGANIZER injection (CalDAV 412 fix)", () => {
+    it("create_event injects ORGANIZER from account when attendees are present", async () => {
+      mockService.createEvent.mockResolvedValue({ uid: "new-1", title: "Meeting" });
+
+      await handleCalendarTool(
+        "create_event",
+        {
+          calendar: "mailbox/Calendar",
+          title: "Meeting",
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          attendees: [{ email: "alice@example.com" }],
+        },
+        mockService as any,
+      );
+
+      expect(mockService.getAccountEmail).toHaveBeenCalledWith("mailbox/Calendar");
+      const icsArg = mockService.createEvent.mock.calls[0][1];
+      expect(icsArg).toMatch(/ORGANIZER[^\r\n]*mailto:user@example\.com/i);
+      expect(icsArg).toContain("alice@example.com");
+    });
+
+    it("create_event does NOT inject ORGANIZER when no attendees", async () => {
+      mockService.createEvent.mockResolvedValue({ uid: "new-1", title: "Solo" });
+
+      await handleCalendarTool(
+        "create_event",
+        {
+          calendar: "mailbox/Calendar",
+          title: "Solo",
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+        },
+        mockService as any,
+      );
+
+      const icsArg = mockService.createEvent.mock.calls[0][1];
+      expect(icsArg).not.toMatch(/^ORGANIZER/m);
+    });
+
+    it("update_event injects account ORGANIZER when adding attendees to organizer-less event", async () => {
+      mockService.getEventWithMeta.mockResolvedValue({
+        event: {
+          uid: "evt-1",
+          title: "Meeting",
+          is_recurring: false,
+          recurrence_rule: null,
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          all_day: false,
+          location: null,
+          description: null,
+          attendees: [],
+          organizer: null,
+          alarms: [],
+          categories: [],
+          availability: null,
+        },
+        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
+      });
+      mockService.updateEvent.mockResolvedValue({ uid: "evt-1" });
+
+      await handleCalendarTool(
+        "update_event",
+        {
+          calendar: "mailbox/Calendar",
+          uid: "evt-1",
+          attendees: [{ email: "alice@example.com" }],
+        },
+        mockService as any,
+      );
+
+      const icsArg = mockService.updateEvent.mock.calls[0][2];
+      expect(icsArg).toMatch(/ORGANIZER[^\r\n]*mailto:user@example\.com/i);
+      expect(icsArg).toContain("alice@example.com");
+    });
+
+    it("update_event preserves existing ORGANIZER instead of overwriting with account", async () => {
+      mockService.getEventWithMeta.mockResolvedValue({
+        event: {
+          uid: "evt-1",
+          title: "Meeting",
+          is_recurring: false,
+          recurrence_rule: null,
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          all_day: false,
+          location: null,
+          description: null,
+          attendees: [{ email: "bob@example.com" }],
+          organizer: { email: "alice@example.com", name: "Alice" },
+          alarms: [],
+          categories: [],
+          availability: null,
+        },
+        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
+      });
+      mockService.updateEvent.mockResolvedValue({ uid: "evt-1" });
+
+      await handleCalendarTool(
+        "update_event",
+        { calendar: "mailbox/Calendar", uid: "evt-1", title: "Renamed" },
+        mockService as any,
+      );
+
+      const icsArg = mockService.updateEvent.mock.calls[0][2];
+      expect(icsArg).toMatch(/ORGANIZER[^\r\n]*mailto:alice@example\.com/i);
+      expect(icsArg).not.toContain("user@example.com");
+    });
+  });
+
+  describe("availability / free-busy", () => {
+    it("update_event schema exposes availability enum", () => {
+      const tool = CALENDAR_TOOLS.find((t) => t.name === "update_event")!;
+      const props = (tool.inputSchema as any).properties;
+      expect(props.availability).toBeDefined();
+      expect(props.availability.enum).toEqual(["busy", "free"]);
+    });
+
+    it("create_event schema exposes availability enum", () => {
+      const tool = CALENDAR_TOOLS.find((t) => t.name === "create_event")!;
+      const props = (tool.inputSchema as any).properties;
+      expect(props.availability).toBeDefined();
+      expect(props.availability.enum).toEqual(["busy", "free"]);
+    });
+
+    it("create_event sets TRANSP:TRANSPARENT when availability is 'free'", async () => {
+      mockService.createEvent.mockResolvedValue({ uid: "new-1" });
+
+      await handleCalendarTool(
+        "create_event",
+        {
+          calendar: "mailbox/Calendar",
+          title: "Focus",
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          availability: "free",
+        },
+        mockService as any,
+      );
+
+      const icsArg = mockService.createEvent.mock.calls[0][1];
+      expect(icsArg).toContain("TRANSP:TRANSPARENT");
+    });
+
+    it("update_event preserves existing 'free' availability when not provided", async () => {
+      mockService.getEventWithMeta.mockResolvedValue({
+        event: {
+          uid: "evt-1",
+          title: "Focus",
+          is_recurring: false,
+          recurrence_rule: null,
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          all_day: false,
+          location: null,
+          description: null,
+          attendees: [],
+          organizer: null,
+          alarms: [],
+          categories: [],
+          availability: "free",
+        },
+        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
+      });
+      mockService.updateEvent.mockResolvedValue({ uid: "evt-1" });
+
+      await handleCalendarTool(
+        "update_event",
+        { calendar: "mailbox/Calendar", uid: "evt-1", title: "Focus Block" },
+        mockService as any,
+      );
+
+      const icsArg = mockService.updateEvent.mock.calls[0][2];
+      expect(icsArg).toContain("TRANSP:TRANSPARENT");
+    });
+
+    it("update_event overrides availability from 'busy' to 'free'", async () => {
+      mockService.getEventWithMeta.mockResolvedValue({
+        event: {
+          uid: "evt-1",
+          title: "Meeting",
+          is_recurring: false,
+          recurrence_rule: null,
+          start: "2026-03-10T14:00:00Z",
+          end: "2026-03-10T15:00:00Z",
+          all_day: false,
+          location: null,
+          description: null,
+          attendees: [],
+          organizer: null,
+          alarms: [],
+          categories: [],
+          availability: "busy",
+        },
+        meta: { url: "/cal/evt-1.ics", etag: '"e1"' },
+      });
+      mockService.updateEvent.mockResolvedValue({ uid: "evt-1" });
+
+      await handleCalendarTool(
+        "update_event",
+        { calendar: "mailbox/Calendar", uid: "evt-1", availability: "free" },
+        mockService as any,
+      );
+
+      const icsArg = mockService.updateEvent.mock.calls[0][2];
+      expect(icsArg).toContain("TRANSP:TRANSPARENT");
     });
   });
 });

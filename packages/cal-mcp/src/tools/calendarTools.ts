@@ -205,6 +205,12 @@ export const CALENDAR_TOOLS: Tool[] = [
           description:
             "RFC 5545 RRULE string for a recurring event (e.g., 'FREQ=WEEKLY;BYDAY=MO,WE,FR' or 'FREQ=MONTHLY;BYDAY=+3FR;COUNT=12'). Accepted with or without the 'RRULE:' prefix. FREQ is required.",
         },
+        availability: {
+          type: "string",
+          enum: ["busy", "free"],
+          description:
+            "Free/busy transparency. 'busy' (default) blocks the time (TRANSP:OPAQUE); 'free' marks the time as available (TRANSP:TRANSPARENT).",
+        },
       },
       required: ["calendar", "title", "start", "end"],
     },
@@ -287,6 +293,12 @@ export const CALENDAR_TOOLS: Tool[] = [
           enum: ["this", "all"],
           description:
             "'this' modifies only this occurrence, 'all' modifies the entire series. Default: this.",
+        },
+        availability: {
+          type: "string",
+          enum: ["busy", "free"],
+          description:
+            "Free/busy transparency. 'busy' blocks the time (TRANSP:OPAQUE); 'free' marks the time as available (TRANSP:TRANSPARENT). If omitted, existing value is preserved.",
         },
       },
       required: ["calendar", "uid"],
@@ -394,6 +406,12 @@ export const CALENDAR_TOOLS: Tool[] = [
                 type: "string",
                 description:
                   "RFC 5545 RRULE string for a recurring event (e.g., 'FREQ=WEEKLY;BYDAY=MO'). FREQ is required.",
+              },
+              availability: {
+                type: "string",
+                enum: ["busy", "free"],
+                description:
+                  "Free/busy transparency. 'busy' (default) blocks the time; 'free' marks the time as available.",
               },
             },
             required: ["title", "start", "end"],
@@ -571,6 +589,14 @@ export async function handleCalendarTool(
 
       case "create_event": {
         try {
+          const attendees = args.attendees as Array<{ email: string }> | undefined;
+          const calendarId = args.calendar as string;
+          // Populate ORGANIZER whenever attendees are present — CalDAV servers
+          // (SOGo/mailbox.org) reject ATTENDEE-without-ORGANIZER PUTs with 412.
+          const organizer =
+            attendees && attendees.length > 0
+              ? { email: service.getAccountEmail(calendarId) }
+              : undefined;
           const icsString = generateEventIcs({
             title: args.title as string,
             start: args.start as string,
@@ -578,12 +604,14 @@ export async function handleCalendarTool(
             all_day: (args.all_day as boolean) ?? false,
             location: args.location as string | undefined,
             description: args.description as string | undefined,
-            attendees: args.attendees as Array<{ email: string }> | undefined,
+            attendees,
             alarms: args.alarms as
               | Array<{ type: "relative" | "absolute"; trigger: number | string }>
               | undefined,
             categories: args.categories as string[] | undefined,
             recurrence_rule: args.recurrence_rule as string | undefined,
+            organizer,
+            availability: args.availability as "busy" | "free" | undefined,
             timezone: getTimezone(),
           });
           const uidMatch = icsString.match(/UID:(.+)/);
@@ -630,6 +658,8 @@ export async function handleCalendarTool(
             attendees?: Array<{ email: string }>;
             alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
             categories?: string[];
+            organizer?: { email: string; name?: string | null };
+            availability?: "busy" | "free";
           } = {};
           if (args.title !== undefined) overrides.title = args.title as string;
           if (args.start !== undefined) overrides.start = args.start as string;
@@ -645,6 +675,15 @@ export async function handleCalendarTool(
               trigger: number | string;
             }>;
           if (args.categories !== undefined) overrides.categories = args.categories as string[];
+          if (args.availability !== undefined)
+            overrides.availability = args.availability as "busy" | "free";
+
+          // If the effective event will have attendees but no organizer yet,
+          // inject one so the CalDAV PUT satisfies server scheduling preconditions.
+          const effectiveAttendees = overrides.attendees ?? existing.attendees;
+          if (effectiveAttendees && effectiveAttendees.length > 0 && !existing.organizer) {
+            overrides.organizer = { email: service.getAccountEmail(args.calendar as string) };
+          }
 
           const exceptionVevent = createExceptionVevent(
             rawObj.data,
@@ -680,6 +719,30 @@ export async function handleCalendarTool(
           return ok({ event: responseEvent });
         }
 
+        const effectiveAttendees =
+          (args.attendees as Array<{ email: string }> | undefined) ??
+          existing.attendees?.map((a: { email: string; name?: string | null }) => ({
+            email: a.email,
+            name: a.name ?? undefined,
+          }));
+
+        // Preserve existing ORGANIZER if present; otherwise inject account-owner
+        // when the resulting event has attendees. Without this, CalDAV servers
+        // (SOGo/mailbox.org) reject the PUT with 412 because ATTENDEE requires
+        // ORGANIZER per RFC 5545 §3.6.1 / RFC 6638 scheduling preconditions.
+        let organizer: { email: string; name?: string | null } | undefined;
+        if (existing.organizer) {
+          organizer = { email: existing.organizer.email, name: existing.organizer.name };
+        } else if (effectiveAttendees && effectiveAttendees.length > 0) {
+          organizer = { email: service.getAccountEmail(args.calendar as string) };
+        }
+
+        const effectiveAvailability =
+          (args.availability as "busy" | "free" | undefined) ??
+          (existing.availability === "free" || existing.availability === "busy"
+            ? existing.availability
+            : undefined);
+
         const icsString = generateEventIcs({
           uid: args.uid as string,
           title: (args.title as string) ?? existing.title,
@@ -688,18 +751,15 @@ export async function handleCalendarTool(
           all_day: (args.all_day as boolean) ?? existing.all_day,
           location: (args.location as string) ?? existing.location ?? undefined,
           description: (args.description as string) ?? existing.description ?? undefined,
-          attendees:
-            (args.attendees as Array<{ email: string }> | undefined) ??
-            existing.attendees?.map((a: { email: string; name?: string | null }) => ({
-              email: a.email,
-              name: a.name ?? undefined,
-            })),
+          attendees: effectiveAttendees,
           alarms:
             (args.alarms as
               | Array<{ type: "relative" | "absolute"; trigger: number | string }>
               | undefined) ??
             existing.alarms?.map((a: any) => ({ type: a.type, trigger: a.trigger })),
           categories: (args.categories as string[] | undefined) ?? existing.categories,
+          organizer,
+          availability: effectiveAvailability,
           timezone: getTimezone(),
         });
         const event = await service.updateEvent(
@@ -779,14 +839,23 @@ export async function handleCalendarTool(
           alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
           categories?: string[];
           recurrence_rule?: string;
+          availability?: "busy" | "free";
         }>;
+        const calendarId = args.calendar as string;
+        const accountEmail = service.getAccountEmail(calendarId);
         const createdEvents = [];
         try {
           for (const input of eventInputs) {
-            const icsString = generateEventIcs({ ...input, timezone: getTimezone() });
+            const organizer =
+              input.attendees && input.attendees.length > 0 ? { email: accountEmail } : undefined;
+            const icsString = generateEventIcs({
+              ...input,
+              organizer,
+              timezone: getTimezone(),
+            });
             const uidMatch = icsString.match(/UID:(.+)/);
             const uid = uidMatch ? uidMatch[1].trim() : crypto.randomUUID();
-            const event = await service.createEvent(args.calendar as string, icsString, uid);
+            const event = await service.createEvent(calendarId, icsString, uid);
             createdEvents.push(event);
           }
         } catch (err) {

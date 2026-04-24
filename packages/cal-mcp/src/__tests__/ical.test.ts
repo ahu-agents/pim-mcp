@@ -974,6 +974,94 @@ describe("generateEventIcs", () => {
       expect(ics).toContain("20260314T150000Z");
     });
   });
+
+  describe("organizer + attendees", () => {
+    it("emits ORGANIZER line when organizer prop is provided", () => {
+      const ics = generateEventIcs({
+        title: "Meeting",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        organizer: { email: "me@example.com" },
+        attendees: [{ email: "bob@example.com" }],
+      });
+      expect(ics).toMatch(/ORGANIZER[^\r\n]*mailto:me@example\.com/i);
+      expect(ics).toMatch(/ATTENDEE[^\r\n]*mailto:bob@example\.com/i);
+    });
+
+    it("falls back to email local-part for CN when organizer name is absent", () => {
+      const ics = generateEventIcs({
+        title: "Meeting",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        organizer: { email: "miguel.rios@mailbox.org" },
+      });
+      expect(ics).toContain('CN="miguel.rios"');
+    });
+
+    it("uses provided organizer name when given", () => {
+      const ics = generateEventIcs({
+        title: "Meeting",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        organizer: { email: "me@example.com", name: "Miguel Rios" },
+      });
+      expect(ics).toContain('CN="Miguel Rios"');
+    });
+
+    it("does not emit ORGANIZER when organizer prop is absent", () => {
+      const ics = generateEventIcs({
+        title: "Solo Task",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+      });
+      expect(ics).not.toMatch(/^ORGANIZER/m);
+    });
+
+    it("round-trip: organizer generated then parsed preserves email", () => {
+      const ics = generateEventIcs({
+        title: "Meeting",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        organizer: { email: "me@example.com" },
+      });
+      const parsed = parseIcsEvents(ics);
+      expect(parsed[0].organizer?.email).toBe("me@example.com");
+    });
+  });
+
+  describe("availability (free/busy transparency)", () => {
+    it("emits TRANSP:TRANSPARENT when availability is 'free'", () => {
+      const ics = generateEventIcs({
+        title: "Focus Block",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        availability: "free",
+      });
+      expect(ics).toContain("TRANSP:TRANSPARENT");
+      expect(ics).not.toContain("TRANSP:OPAQUE");
+    });
+
+    it("emits TRANSP:OPAQUE when availability is 'busy'", () => {
+      const ics = generateEventIcs({
+        title: "Meeting",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        availability: "busy",
+      });
+      expect(ics).toContain("TRANSP:OPAQUE");
+    });
+
+    it("round-trip: availability=free generates and parses back as 'free'", () => {
+      const ics = generateEventIcs({
+        title: "Focus",
+        start: "2026-03-10T14:00:00Z",
+        end: "2026-03-10T15:00:00Z",
+        availability: "free",
+      });
+      const parsed = parseIcsEvents(ics);
+      expect(parsed[0].availability).toBe("free");
+    });
+  });
 });
 
 describe("addExdateToIcs", () => {
@@ -1110,6 +1198,76 @@ describe("createExceptionVevent", () => {
       false,
     );
     expect(result).toMatch(/SEQUENCE:\d+/);
+  });
+
+  it("emits ORGANIZER line from overrides when attendees are added", () => {
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      {
+        attendees: [{ email: "alice@example.com" }],
+        organizer: { email: "me@example.com" },
+      },
+      false,
+    );
+    expect(result).toMatch(/ORGANIZER[^\r\n]*mailto:me@example\.com/i);
+    expect(result).toContain("ATTENDEE:mailto:alice@example.com");
+  });
+
+  it("preserves master ORGANIZER when no override is given", () => {
+    const masterWithOrganizer = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:weekly-meeting",
+      "DTSTART:20260101T100000Z",
+      "DTEND:20260101T110000Z",
+      "RRULE:FREQ=WEEKLY;COUNT=52",
+      "SUMMARY:Weekly Standup",
+      "ORGANIZER;CN=Alice:MAILTO:alice@example.com",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = createExceptionVevent(
+      masterWithOrganizer,
+      "2026-03-05T10:00:00.000Z",
+      { title: "Renamed" },
+      false,
+    );
+    expect(result).toMatch(/ORGANIZER[^\r\n]*mailto:alice@example\.com/i);
+  });
+
+  it("emits TRANSP line for availability overrides", () => {
+    const result = createExceptionVevent(
+      masterIcs,
+      "2026-03-05T10:00:00.000Z",
+      { availability: "free" },
+      false,
+    );
+    expect(result).toContain("TRANSP:TRANSPARENT");
+  });
+
+  it("preserves master TRANSP when no availability override is given", () => {
+    const masterBusy = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:weekly-meeting",
+      "DTSTART:20260101T100000Z",
+      "DTEND:20260101T110000Z",
+      "RRULE:FREQ=WEEKLY;COUNT=52",
+      "SUMMARY:Weekly Standup",
+      "TRANSP:OPAQUE",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const result = createExceptionVevent(
+      masterBusy,
+      "2026-03-05T10:00:00.000Z",
+      { title: "Renamed" },
+      false,
+    );
+    expect(result).toContain("TRANSP:OPAQUE");
   });
 });
 

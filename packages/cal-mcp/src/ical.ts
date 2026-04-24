@@ -1,5 +1,5 @@
 import { formatInTimezone } from "@miguelarios/pim-core";
-import ical, { ICalAlarmType, ICalEventStatus } from "ical-generator";
+import ical, { ICalAlarmType, ICalEventStatus, ICalEventTransparency } from "ical-generator";
 import nodeIcal from "node-ical";
 
 export interface ParsedAlarm {
@@ -58,6 +58,13 @@ export interface EventCreateProps {
   }>;
   categories?: string[];
   recurrence_rule?: string;
+  // ORGANIZER for the VEVENT. Strict CalDAV servers (SOGo/mailbox.org and
+  // others implementing RFC 6638 scheduling) reject a PUT that contains
+  // ATTENDEE without ORGANIZER with 412 Precondition Failed. Callers that
+  // include attendees MUST pass an organizer (typically the calendar owner).
+  organizer?: { email: string; name?: string | null };
+  // Free/busy transparency. "busy" → TRANSP:OPAQUE, "free" → TRANSP:TRANSPARENT.
+  availability?: "busy" | "free";
 }
 
 // Validate an RRULE string per RFC 5545. Accepts either the raw rule
@@ -505,6 +512,21 @@ export function generateEventIcs(props: EventCreateProps): string {
     event.timezone(props.timezone);
   }
 
+  if (props.availability === "free") {
+    event.transparency(ICalEventTransparency.TRANSPARENT);
+  } else if (props.availability === "busy") {
+    event.transparency(ICalEventTransparency.OPAQUE);
+  }
+
+  if (props.organizer) {
+    // ical-generator requires a non-empty CN; fall back to the email local-part.
+    const name =
+      props.organizer.name && props.organizer.name.trim().length > 0
+        ? props.organizer.name
+        : props.organizer.email.split("@")[0];
+    event.organizer({ email: props.organizer.email, name });
+  }
+
   if (props.attendees) {
     for (const att of props.attendees) {
       // No CN is sent — display name is resolved server-side from the
@@ -561,6 +583,8 @@ export function createExceptionVevent(
     attendees?: Array<{ email: string }>;
     alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
     categories?: string[];
+    organizer?: { email: string; name?: string | null };
+    availability?: "busy" | "free";
   },
   allDay: boolean,
 ): string {
@@ -625,6 +649,19 @@ export function createExceptionVevent(
   if (location) lines.push(`LOCATION:${location}`);
   if (description) lines.push(`DESCRIPTION:${description}`);
 
+  // ORGANIZER — required by RFC 5545 when ATTENDEE is present, and strict
+  // CalDAV servers (SOGo/mailbox.org) reject PUTs without it with 412.
+  // Prefer explicit override, then master's existing organizer, then caller-
+  // supplied fallback (tool layer passes the account owner).
+  const organizer = overrides.organizer ?? master.organizer ?? null;
+  if (organizer) {
+    const name =
+      organizer.name && organizer.name.trim().length > 0
+        ? organizer.name
+        : organizer.email.split("@")[0];
+    lines.push(`ORGANIZER;CN="${name}":mailto:${organizer.email}`);
+  }
+
   // Attendees
   const attendees = overrides.attendees ?? master.attendees;
   if (attendees) {
@@ -638,6 +675,14 @@ export function createExceptionVevent(
   const categories = overrides.categories ?? master.categories;
   if (categories && categories.length > 0) {
     lines.push(`CATEGORIES:${categories.join(",")}`);
+  }
+
+  // TRANSP — preserve master's availability unless overridden.
+  const availability = overrides.availability ?? master.availability;
+  if (availability === "free") {
+    lines.push("TRANSP:TRANSPARENT");
+  } else if (availability === "busy") {
+    lines.push("TRANSP:OPAQUE");
   }
 
   lines.push("STATUS:CONFIRMED");

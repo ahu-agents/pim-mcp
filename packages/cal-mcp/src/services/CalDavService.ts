@@ -340,6 +340,15 @@ export class CalDavService {
     }
   }
 
+  // Returns the CalDAV account username for the given calendar_id. Used by
+  // the tool layer to populate ORGANIZER on events that include attendees —
+  // without this, strict CalDAV servers reject the PUT with 412 (see
+  // updateEvent and generateEventIcs for context).
+  getAccountEmail(calendarId: string): string {
+    const { account } = this.resolveAccount(calendarId);
+    return account.username;
+  }
+
   async listCalendars(): Promise<CalendarInfo[]> {
     const allCalendars: CalendarInfo[] = [];
 
