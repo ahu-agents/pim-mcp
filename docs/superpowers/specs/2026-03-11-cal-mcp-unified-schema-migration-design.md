@@ -1,7 +1,7 @@
 # cal-mcp Unified Schema Migration Design
 
 **Date:** 2026-03-11
-**Spec:** `docs/specs/unified-calendar-mcp-spec-v1.md` (v1.1, LOCKED)
+**Spec:** `docs/superpowers/specs/2026-03-11-unified-calendar-mcp-design.md` (v1.1, LOCKED)
 **Release:** 0.3.0 (breaking, clean break)
 **Approach:** File-by-file with TDD, dependency order
 

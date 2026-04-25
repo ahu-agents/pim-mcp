@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, imapflow, vitest
 
-**Spec:** `docs/specs/search-emails-north-star.md`
+**Spec:** `docs/superpowers/specs/2026-03-17-search-emails-north-star-design.md`
 
 ---
 

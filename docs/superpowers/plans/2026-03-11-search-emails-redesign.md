@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, imapflow (SearchObject API), Vitest, MCP SDK
 
-**Spec:** `docs/specs/2026-03-11-search-emails-sort-redesign.md`
+**Spec:** `docs/superpowers/specs/2026-03-11-search-emails-sort-redesign.md`
 
 **Note:** imapflow does not expose a public SORT command (RFC 5256). Tier 1 (server-side SORT) is deferred. We implement Tiers 2 and 3 only.
 

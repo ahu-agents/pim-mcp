@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, tsdav, ical-generator, node-ical, @modelcontextprotocol/sdk, Vitest
 
-**Design doc:** `docs/plans/2026-03-05-phase3-calendar-mvp-design.md`
+**Design doc:** `docs/superpowers/specs/2026-03-05-phase3-calendar-mvp-design.md`
 
 ---
 

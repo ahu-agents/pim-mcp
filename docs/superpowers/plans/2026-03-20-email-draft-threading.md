@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, nodemailer (MailComposer), imapflow, mailparser, Vitest
 
-**Spec:** `docs/specs/email-draft-threading-spec.md`
+**Spec:** `docs/superpowers/specs/2026-03-20-email-draft-threading-design.md`
 
 ---
 

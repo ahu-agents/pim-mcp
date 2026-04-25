@@ -10,7 +10,7 @@
 
 **Reference docs:**
 - Design spec: `docs/superpowers/specs/2026-03-11-cal-mcp-unified-schema-migration-design.md`
-- Unified spec: `docs/specs/unified-calendar-mcp-spec-v1.md`
+- Unified spec: `docs/superpowers/specs/2026-03-11-unified-calendar-mcp-design.md`
 
 ---
 
@@ -1146,7 +1146,7 @@ Expected: FAIL — tool count is 9 not 11, old field names, no envelopes.
 
 - [ ] **Step 3: Update CALENDAR_TOOLS array with new schemas**
 
-Replace the entire `CALENDAR_TOOLS` array in `packages/cal-mcp/src/tools/calendarTools.ts`. This is the full replacement — all 11 tools with updated schemas. The tool definitions are long so the implementing agent should read the unified spec (`docs/specs/unified-calendar-mcp-spec-v1.md`) and the design spec for exact param names, types, required flags, and descriptions. Key changes:
+Replace the entire `CALENDAR_TOOLS` array in `packages/cal-mcp/src/tools/calendarTools.ts`. This is the full replacement — all 11 tools with updated schemas. The tool definitions are long so the implementing agent should read the unified spec (`docs/superpowers/specs/2026-03-11-unified-calendar-mcp-design.md`) and the design spec for exact param names, types, required flags, and descriptions. Key changes:
 - `create_event`: `summary` → `title`, add `all_day`
 - `update_event`: `summary` → `title`, add `all_day`, add `span`
 - `delete_event`: add `span`

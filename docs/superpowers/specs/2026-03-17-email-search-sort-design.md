@@ -3,7 +3,7 @@
 **Status:** Implemented (email-mcp@0.5.0)
 
 > **Iteration 1** of the search_emails improvements roadmap.
-> North star spec: `docs/specs/search-emails-north-star.md` (future)
+> North star spec: `docs/superpowers/specs/2026-03-17-search-emails-north-star-design.md` (future)
 
 ## Goal
 

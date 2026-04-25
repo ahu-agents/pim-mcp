@@ -11,7 +11,7 @@
 **Reference implementations:**
 - `packages/card-mcp/` — MCP server pattern, service layer, tool definitions, testing
 - `packages/core/` — error hierarchy, config loader, exports
-- Design doc: `docs/plans/2026-03-04-phase2-email-mvp-design.md`
+- Design doc: `docs/superpowers/specs/2026-03-04-phase2-email-mvp-design.md`
 
 ---
 
