@@ -407,8 +407,8 @@ describe("CardDavService.resolveContact", () => {
     if (r.status !== "ambiguous") throw new Error(`expected ambiguous, got ${r.status}`);
     expect(r.candidates.map((c) => c.fullName)).toEqual([
       "Alice Brown",
-      "Alice Smith",
       "Alice Lee",
+      "Alice Smith",
     ]);
     expect(r.candidates[0]).toMatchObject({
       fullName: "Alice Brown",
