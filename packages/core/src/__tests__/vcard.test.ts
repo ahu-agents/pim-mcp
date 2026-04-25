@@ -554,7 +554,7 @@ describe("parseVCard iOS golden (Patrick-shaped)", () => {
           type: "home",
           street: "789 Pine Rd",
           city: "Anytown",
-          state: "TX",
+          state: "ST",
           postalCode: "00000",
           country: "United States",
         },
