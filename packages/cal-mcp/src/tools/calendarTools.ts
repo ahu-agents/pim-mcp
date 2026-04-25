@@ -1,12 +1,12 @@
 import { getTimezone, toPimError } from "@miguelarios/pim-core";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import {
   addExdateToIcs,
   combineIcsComponents,
-  createExceptionVevent,
+  createExceptionComponent,
   generateEventIcs,
   parseIcsEvents,
-} from "../ical.js";
+} from "@miguelarios/pim-core/ics";
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import {
   type CalDavService,
   type CalendarObjectMeta,
@@ -685,8 +685,9 @@ export async function handleCalendarTool(
             overrides.organizer = { email: service.getAccountEmail(args.calendar as string) };
           }
 
-          const exceptionVevent = createExceptionVevent(
+          const exceptionVevent = createExceptionComponent(
             rawObj.data,
+            "vevent",
             occurrenceDate,
             overrides,
             existing.all_day,

@@ -1,0 +1,13 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//pim-core//test fixture//EN
+BEGIN:VJOURNAL
+UID:journal-basic-fixture@pim-core
+DTSTAMP:20260424T120000Z
+DTSTART;VALUE=DATE:20260424
+SUMMARY:Project journal entry
+DESCRIPTION:First milestone reached for the migration project.
+CATEGORIES:Work,Notes
+STATUS:FINAL
+END:VJOURNAL
+END:VCALENDAR

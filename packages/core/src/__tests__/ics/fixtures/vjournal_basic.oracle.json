@@ -1,0 +1,14 @@
+{
+  "expected": [
+    {
+      "uid": "journal-basic-fixture@pim-core",
+      "title": "Project journal entry",
+      "date": "2026-04-24",
+      "description": "First milestone reached for the migration project.",
+      "categories": ["Work", "Notes"],
+      "status": "final",
+      "created": null,
+      "last_modified": null
+    }
+  ]
+}

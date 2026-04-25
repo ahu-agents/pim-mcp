@@ -1,0 +1,27 @@
+{
+  "expected": [
+    {
+      "uid": "d118e997-3683-4552-8fe8-57c641f1f179",
+      "title": "And another",
+      "start": "2012-08-21T21:00:00.000Z",
+      "end": "2012-08-21T21:30:00.000Z",
+      "all_day": false,
+      "location": null,
+      "description": null,
+      "status": "confirmed",
+      "availability": "busy",
+      "url": null,
+      "attendees": [],
+      "categories": [],
+      "geo": null,
+      "organizer": { "email": "alice@example.com", "name": "Sahaja Lal" },
+      "recurrence_rule": null,
+      "rdates": null,
+      "created": null,
+      "last_modified": null,
+      "is_recurring": false,
+      "alarms": [],
+      "occurrence_date": null
+    }
+  ]
+}

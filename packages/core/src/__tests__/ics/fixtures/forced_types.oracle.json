@@ -1,0 +1,33 @@
+{
+  "expected": [
+    {
+      "uid": "event-2@example.com",
+      "title": "Event",
+      "start": "2012-09-04T00:00:00.000Z",
+      "end": "2012-09-05T00:00:00.000Z",
+      "all_day": true,
+      "location": null,
+      "description": null,
+      "status": "confirmed",
+      "availability": "free",
+      "url": null,
+      "attendees": [],
+      "categories": [],
+      "geo": null,
+      "organizer": null,
+      "recurrence_rule": null,
+      "rdates": null,
+      "created": "2012-09-05T08:47:34.000Z",
+      "last_modified": "2012-09-05T08:47:34.000Z",
+      "is_recurring": false,
+      "alarms": [
+        {
+          "type": "absolute",
+          "trigger": "2012-09-03T23:30:00.000Z",
+          "trigger_human": "2012-09-03T23:30:00.000Z"
+        }
+      ],
+      "occurrence_date": null
+    }
+  ]
+}

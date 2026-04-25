@@ -7,8 +7,13 @@ import {
   getTimezone,
   toPimError,
 } from "@miguelarios/pim-core";
+import {
+  type ParsedAlarm,
+  type ParsedEvent,
+  type TimeRange,
+  parseIcsEvents,
+} from "@miguelarios/pim-core/ics";
 import { DAVClient } from "tsdav";
-import { type ParsedAlarm, type ParsedEvent, type TimeRange, parseIcsEvents } from "../ical.js";
 import { deleteCachedObject, getCachedObject, setCachedObject } from "./urlCache.js";
 
 export interface CalendarInfo {

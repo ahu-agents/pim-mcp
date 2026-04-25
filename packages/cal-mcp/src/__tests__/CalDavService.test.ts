@@ -32,7 +32,7 @@ vi.mock("tsdav", () => {
 });
 
 // Mock ical helpers
-vi.mock("../ical.js", () => ({
+vi.mock("@miguelarios/pim-core/ics", () => ({
   parseIcsEvents: vi.fn().mockReturnValue([]),
   generateEventIcs: vi.fn().mockReturnValue("BEGIN:VCALENDAR\nEND:VCALENDAR"),
 }));
@@ -181,7 +181,7 @@ describe("CalDavService", () => {
   describe("listEvents", () => {
     it("fetches events with time range and returns EventSummary array", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
@@ -224,7 +224,7 @@ describe("CalDavService", () => {
   describe("listEventsFull", () => {
     it("returns full events in a single CalDAV fetch (no per-event getEvent)", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
@@ -270,7 +270,7 @@ describe("CalDavService", () => {
   describe("getEvent", () => {
     it("fetches a single event by UID and returns full details", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
@@ -315,7 +315,7 @@ describe("CalDavService", () => {
 
     it("throws CalendarError when event not found", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([{ uid: "other-event", summary: "Other" }]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "...", url: "/cal/other.ics", etag: '"e1"' },
@@ -326,7 +326,7 @@ describe("CalDavService", () => {
 
     it("tries the canonical URL (<cal>/<uid>.ics) first — single targeted fetch", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
@@ -366,7 +366,7 @@ describe("CalDavService", () => {
 
     it("falls back to UID prop-filter then full scan when canonical URL misses", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
@@ -413,7 +413,7 @@ describe("CalDavService", () => {
 
     it("sends a UID prop-filter as the second fallback (when canonical URL misses)", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
@@ -452,7 +452,7 @@ describe("CalDavService", () => {
 
     it("uses the cached URL fast path when a UID→URL mapping exists", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       const { setCachedObject } = (await import("../services/urlCache.js")) as any;
 
       // Seed the cache with a non-canonical URL so the canonical-URL fast
@@ -505,7 +505,7 @@ describe("CalDavService", () => {
 
     it("drops a stale URL-cache entry and falls through when the targeted fetch misses", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       const { setCachedObject, getCachedObject } = (await import("../services/urlCache.js")) as any;
 
       setCachedObject("mailbox/Work", "evt-1", { url: "/cal/old-url.ics", etag: '"e0"' });
@@ -556,7 +556,7 @@ describe("CalDavService", () => {
 
     it("getEvent returns new fields (alarms, categories, geo, attendee type)", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-full",
@@ -607,7 +607,7 @@ describe("CalDavService", () => {
   describe("createEvent", () => {
     it("creates a calendar object and returns event built from ICS", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       __mockClient.createCalendarObject.mockResolvedValue({ ok: true });
 
@@ -667,7 +667,7 @@ describe("CalDavService", () => {
   describe("updateEvent", () => {
     it("updates an existing calendar object and returns the updated event", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       // findCalendarObject call: parseIcsEvents matches uid to find the object
       (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
@@ -714,7 +714,7 @@ describe("CalDavService", () => {
 
     it("throws CalendarError when event to update is not found", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([]);
 
@@ -725,7 +725,7 @@ describe("CalDavService", () => {
 
     it("throws CalendarError when retried PUT still returns 412", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       // findCalendarObject succeeds on both the initial lookup and the post-412 refetch
       (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
@@ -748,7 +748,7 @@ describe("CalDavService", () => {
 
     it("throws CalendarError when server returns non-412 non-ok response", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       (parseIcsEvents as any).mockReturnValueOnce([{ uid: "evt-1" }]);
       __mockClient.fetchCalendarObjects.mockResolvedValueOnce([
@@ -770,7 +770,7 @@ describe("CalDavService", () => {
 
     it("retries once with a fresh etag on 412 and succeeds", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       const fullEvent = {
         uid: "evt-1",
@@ -834,7 +834,7 @@ describe("CalDavService", () => {
 
     it("retries with a fresh etag on 412 even when meta was provided by the caller", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       const fullEvent = {
         uid: "evt-1",
@@ -900,7 +900,7 @@ describe("CalDavService", () => {
 
     it("skips findCalendarObject when meta is provided", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       const fullEvent = {
         uid: "evt-1",
@@ -953,7 +953,7 @@ describe("CalDavService", () => {
   describe("deleteEvent", () => {
     it("deletes a calendar object by UID", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "...", url: "/cal/evt-1.ics", etag: '"e1"' },
@@ -973,7 +973,7 @@ describe("CalDavService", () => {
 
     it("throws CalendarError when server returns non-ok response", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -1012,7 +1012,7 @@ describe("CalDavService", () => {
 
     it("retries once with a fresh etag on 412 and succeeds", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       // Two findCalendarObject calls: initial lookup + retry refetch
       (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
@@ -1043,7 +1043,7 @@ describe("CalDavService", () => {
 
     it("throws CalendarError when retried DELETE still returns 412", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       (parseIcsEvents as any).mockReturnValue([{ uid: "evt-1" }]);
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -1067,7 +1067,7 @@ describe("CalDavService", () => {
   describe("findFreeSlots", () => {
     it("finds free slots between events", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1112,7 +1112,7 @@ describe("CalDavService", () => {
 
     it("ignores free events (availability: free)", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1143,7 +1143,7 @@ describe("CalDavService", () => {
 
     it("treats tentative as busy by default", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1174,7 +1174,7 @@ describe("CalDavService", () => {
 
     it("ignores tentative events when ignoreTentative is true", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1206,7 +1206,7 @@ describe("CalDavService", () => {
 
     it("excludes events from excluded calendars", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1239,7 +1239,7 @@ describe("CalDavService", () => {
 
     it("skips all-day events by default", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1270,7 +1270,7 @@ describe("CalDavService", () => {
 
     it("blocks all-day events when includeAllDayAsBusy is true", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1301,7 +1301,7 @@ describe("CalDavService", () => {
 
     it("ends free slot exactly at event start time", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "ics-0", url: "/cal/evt-0.ics", etag: '"e0"' },
@@ -1333,7 +1333,7 @@ describe("CalDavService", () => {
 
     it("sorts preferred-hours slots first", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([]);
       parseIcsEvents.mockReturnValue([]);
@@ -1357,7 +1357,7 @@ describe("CalDavService", () => {
   describe("fetchCalendars cache", () => {
     it("caches fetchCalendars result and reuses on second findCalendar call", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       (parseIcsEvents as any).mockReturnValue([
         {
@@ -1396,7 +1396,7 @@ describe("CalDavService", () => {
 
     it("listCalendars always fetches fresh and populates cache", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       (parseIcsEvents as any).mockReturnValue([
         {
@@ -1437,7 +1437,7 @@ describe("CalDavService", () => {
 
     it("invalidates cache on write error", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       (parseIcsEvents as any).mockReturnValue([
         {
@@ -1486,7 +1486,7 @@ describe("CalDavService", () => {
   describe("getEventWithMeta", () => {
     it("returns event and CalDAV object metadata (url, etag)", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       (parseIcsEvents as any).mockReturnValue([
         {
           uid: "evt-1",
@@ -1527,7 +1527,7 @@ describe("CalDavService", () => {
   describe("client caching", () => {
     it("reuses authenticated client across multiple calls for same account", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = (await import("../ical.js")) as any;
+      const { parseIcsEvents } = (await import("@miguelarios/pim-core/ics")) as any;
 
       // Setup mock data for listEvents
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -1562,7 +1562,7 @@ describe("CalDavService", () => {
   describe("fetchRawCalendarObject", () => {
     it("returns raw ICS data, url, and etag for a given uid", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
       const rawIcs = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:test-uid\nEND:VEVENT\nEND:VCALENDAR";
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
@@ -1579,7 +1579,7 @@ describe("CalDavService", () => {
 
     it("throws when uid not found", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       __mockClient.fetchCalendarObjects.mockResolvedValue([
         { data: "BEGIN:VCALENDAR...END:VCALENDAR", url: "/cal/other.ics", etag: '"e1"' },
@@ -1591,7 +1591,7 @@ describe("CalDavService", () => {
 
     it("throws CalendarError when object has no data", async () => {
       const { __mockClient } = (await import("tsdav")) as any;
-      const { parseIcsEvents } = await import("../ical.js");
+      const { parseIcsEvents } = await import("@miguelarios/pim-core/ics");
 
       // Simulate an object returned with no data field
       __mockClient.fetchCalendarObjects.mockResolvedValue([

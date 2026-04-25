@@ -1,0 +1,140 @@
+{
+  "range": { "start": "2012-03-25T00:00:00.000Z", "end": "2012-04-10T00:00:00.000Z" },
+  "expected": [
+    {
+      "uid": "1334F9B7-6136-444E-A58D-472564C6AA73",
+      "title": "bob <> alice",
+      "start": "2012-03-26T18:00:00.000Z",
+      "end": "2012-03-26T18:30:00.000Z",
+      "all_day": false,
+      "location": null,
+      "description": "weekly 1on1",
+      "status": "confirmed",
+      "availability": "busy",
+      "url": null,
+      "attendees": [
+        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+      ],
+      "categories": [],
+      "geo": null,
+      "organizer": { "email": "carol@example.com", "name": "Faramarz Rashed" },
+      "recurrence_rule": "FREQ=WEEKLY;UNTIL=20120730T065959Z",
+      "rdates": null,
+      "created": null,
+      "last_modified": "2012-03-26T16:15:22.000Z",
+      "is_recurring": true,
+      "alarms": [
+        { "type": "relative", "trigger": -300, "trigger_human": "5 minutes before" }
+      ],
+      "occurrence_date": "2012-03-26T18:00:00.000Z"
+    },
+    {
+      "uid": "1334F9B7-6136-444E-A58D-472564C6AA73",
+      "title": "bob <> alice",
+      "start": "2012-04-01T18:00:00.000Z",
+      "end": "2012-04-01T18:30:00.000Z",
+      "all_day": false,
+      "location": null,
+      "description": "weekly 1on1",
+      "status": "confirmed",
+      "availability": "busy",
+      "url": null,
+      "attendees": [
+        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+      ],
+      "categories": [],
+      "geo": null,
+      "organizer": { "email": "carol@example.com", "name": "Faramarz Rashed" },
+      "recurrence_rule": "FREQ=WEEKLY;UNTIL=20120730T065959Z",
+      "rdates": null,
+      "created": null,
+      "last_modified": "2012-03-26T16:15:22.000Z",
+      "is_recurring": true,
+      "alarms": [
+        { "type": "relative", "trigger": -300, "trigger_human": "5 minutes before" }
+      ],
+      "occurrence_date": "2012-04-01T18:00:00.000Z"
+    },
+    {
+      "uid": "1334F9B7-6136-444E-A58D-472564C6AA73",
+      "title": "bob <> alice",
+      "start": "2012-04-02T18:00:00.000Z",
+      "end": "2012-04-02T18:30:00.000Z",
+      "all_day": false,
+      "location": null,
+      "description": "weekly 1on1",
+      "status": "confirmed",
+      "availability": "busy",
+      "url": null,
+      "attendees": [
+        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+      ],
+      "categories": [],
+      "geo": null,
+      "organizer": { "email": "carol@example.com", "name": "Faramarz Rashed" },
+      "recurrence_rule": "FREQ=WEEKLY;UNTIL=20120730T065959Z",
+      "rdates": null,
+      "created": null,
+      "last_modified": "2012-03-26T16:15:22.000Z",
+      "is_recurring": true,
+      "alarms": [
+        { "type": "relative", "trigger": -300, "trigger_human": "5 minutes before" }
+      ],
+      "occurrence_date": "2012-04-02T18:00:00.000Z"
+    },
+    {
+      "uid": "1334F9B7-6136-444E-A58D-472564C6AA73",
+      "title": "bob <> alice",
+      "start": "2012-04-08T18:00:00.000Z",
+      "end": "2012-04-08T18:30:00.000Z",
+      "all_day": false,
+      "location": null,
+      "description": "weekly 1on1",
+      "status": "confirmed",
+      "availability": "busy",
+      "url": null,
+      "attendees": [
+        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+      ],
+      "categories": [],
+      "geo": null,
+      "organizer": { "email": "carol@example.com", "name": "Faramarz Rashed" },
+      "recurrence_rule": "FREQ=WEEKLY;UNTIL=20120730T065959Z",
+      "rdates": null,
+      "created": null,
+      "last_modified": "2012-03-26T16:15:22.000Z",
+      "is_recurring": true,
+      "alarms": [
+        { "type": "relative", "trigger": -300, "trigger_human": "5 minutes before" }
+      ],
+      "occurrence_date": "2012-04-08T18:00:00.000Z"
+    },
+    {
+      "uid": "1334F9B7-6136-444E-A58D-472564C6AA73",
+      "title": "bob <> alice",
+      "start": "2012-04-09T18:00:00.000Z",
+      "end": "2012-04-09T18:30:00.000Z",
+      "all_day": false,
+      "location": null,
+      "description": "weekly 1on1",
+      "status": "confirmed",
+      "availability": "busy",
+      "url": null,
+      "attendees": [
+        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+      ],
+      "categories": [],
+      "geo": null,
+      "organizer": { "email": "carol@example.com", "name": "Faramarz Rashed" },
+      "recurrence_rule": "FREQ=WEEKLY;UNTIL=20120730T065959Z",
+      "rdates": null,
+      "created": null,
+      "last_modified": "2012-03-26T16:15:22.000Z",
+      "is_recurring": true,
+      "alarms": [
+        { "type": "relative", "trigger": -300, "trigger_human": "5 minutes before" }
+      ],
+      "occurrence_date": "2012-04-09T18:00:00.000Z"
+    }
+  ]
+}

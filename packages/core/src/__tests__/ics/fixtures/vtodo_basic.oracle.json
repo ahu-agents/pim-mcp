@@ -1,0 +1,22 @@
+{
+  "expected": [
+    {
+      "uid": "todo-basic-fixture@pim-core",
+      "title": "Buy groceries",
+      "due": null,
+      "completed": null,
+      "percent_complete": null,
+      "priority": 5,
+      "status": "needs-action",
+      "description": null,
+      "categories": [],
+      "attendees": [],
+      "organizer": null,
+      "alarms": [],
+      "recurrence_rule": null,
+      "created": null,
+      "last_modified": null,
+      "occurrence_date": null
+    }
+  ]
+}
