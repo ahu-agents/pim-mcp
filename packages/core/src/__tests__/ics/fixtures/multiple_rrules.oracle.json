@@ -13,7 +13,7 @@
       "availability": "busy",
       "url": null,
       "attendees": [
-        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+        { "email": "dave@example.com", "name": "Carol Davis", "status": "needs-action", "role": "req-participant", "type": "person" }
       ],
       "categories": [],
       "geo": null,
@@ -40,7 +40,7 @@
       "availability": "busy",
       "url": null,
       "attendees": [
-        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+        { "email": "dave@example.com", "name": "Carol Davis", "status": "needs-action", "role": "req-participant", "type": "person" }
       ],
       "categories": [],
       "geo": null,
@@ -67,7 +67,7 @@
       "availability": "busy",
       "url": null,
       "attendees": [
-        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+        { "email": "dave@example.com", "name": "Carol Davis", "status": "needs-action", "role": "req-participant", "type": "person" }
       ],
       "categories": [],
       "geo": null,
@@ -94,7 +94,7 @@
       "availability": "busy",
       "url": null,
       "attendees": [
-        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+        { "email": "dave@example.com", "name": "Carol Davis", "status": "needs-action", "role": "req-participant", "type": "person" }
       ],
       "categories": [],
       "geo": null,
@@ -121,7 +121,7 @@
       "availability": "busy",
       "url": null,
       "attendees": [
-        { "email": "dave@example.com", "name": "James Lal", "status": "needs-action", "role": "req-participant", "type": "person" }
+        { "email": "dave@example.com", "name": "Carol Davis", "status": "needs-action", "role": "req-participant", "type": "person" }
       ],
       "categories": [],
       "geo": null,
