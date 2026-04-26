@@ -81,7 +81,7 @@ Add the servers to your MCP client config (Claude Desktop, Claude Code, etc.). C
 }
 ```
 
-Optional email env vars: `IMAP_PORT` (default 993), `IMAP_SECURE` (default true), `SMTP_PORT` (default 465), `SMTP_SECURE` (default true), `SMTP_FROM_NAME`.
+Optional email env vars: `IMAP_PORT` (default 993), `IMAP_SECURE` (default true), `SMTP_PORT` (default 465), `SMTP_SECURE` (default true), `SMTP_FROM_NAME`, `SMTP_ALLOWED_FROM` (comma-separated additional visible From allowlist).
 
 ### Calendar
 
