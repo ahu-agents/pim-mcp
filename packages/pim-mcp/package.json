@@ -1,0 +1,39 @@
+{
+  "name": "pim-mcp",
+  "version": "0.1.0",
+  "description": "Unified MCP server for mail, calendar, and CalDAV VTODO reminders",
+  "keywords": ["mcp", "pim", "email", "calendar", "tasks", "caldav", "imap", "smtp"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ahu-agents/pim-mcp.git",
+    "directory": "packages/pim-mcp"
+  },
+  "homepage": "https://github.com/ahu-agents/pim-mcp",
+  "bugs": "https://github.com/ahu-agents/pim-mcp/issues",
+  "type": "module",
+  "bin": {
+    "pim-mcp": "dist/bin/cli.js"
+  },
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "start": "node dist/bin/cli.js"
+  },
+  "dependencies": {
+    "@miguelarios/pim-core": "^0.6.0",
+    "@miguelarios/email-mcp": "^0.9.0",
+    "@miguelarios/cal-mcp": "^0.10.0",
+    "@miguelarios/tasks-mcp": "^0.1.0",
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

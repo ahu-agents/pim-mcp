@@ -1,7 +1,7 @@
 {
   "name": "@miguelarios/cal-mcp",
   "version": "0.10.0",
-  "description": "MCP server for calendars via CalDAV — CRUD events, free/busy, multi-provider",
+  "description": "MCP server for calendars via CalDAV \u2014 CRUD events, free/busy, multi-provider",
   "keywords": [
     "mcp",
     "calendar",
@@ -37,5 +37,21 @@
     "@types/node": "^20.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/main.js",
+      "types": "./dist/main.d.ts"
+    },
+    "./tools": {
+      "import": "./dist/tools/calendarTools.js",
+      "types": "./dist/tools/calendarTools.d.ts"
+    },
+    "./services/CalDavService": {
+      "import": "./dist/services/CalDavService.js",
+      "types": "./dist/services/CalDavService.d.ts"
+    }
   }
 }
