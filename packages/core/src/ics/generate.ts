@@ -4,7 +4,7 @@ import ICAL from "ical.js";
 import "./_tz-init.js";
 import { IcsGenerateError } from "./errors.js";
 import { normalizeRecurrenceRule } from "./rrule.js";
-import type { EventCreateProps } from "./types.js";
+import type { EventCreateProps, TodoCreateProps } from "./types.js";
 
 function toIcalTime(iso: string, allDay: boolean, tzid?: string): ICAL.Time {
   const date = new Date(iso);
@@ -80,7 +80,9 @@ export function generateEventIcs(props: EventCreateProps): string {
   }
 
   if (props.categories && props.categories.length > 0) {
-    vevent.addPropertyWithValue("categories", props.categories.join(","));
+    const categories = new ICAL.Property("categories");
+    categories.setValues(props.categories);
+    vevent.addProperty(categories);
   }
 
   if (props.recurrence_rule) {
@@ -108,5 +110,75 @@ export function generateEventIcs(props: EventCreateProps): string {
   }
 
   calendar.addSubcomponent(vevent);
+  return calendar.toString();
+}
+
+export function generateTodoIcs(props: TodoCreateProps): string {
+  const calendar = new ICAL.Component(["vcalendar", [], []]);
+  calendar.updatePropertyWithValue("prodid", "-//pim-core//tasks-mcp//EN");
+  calendar.updatePropertyWithValue("version", "2.0");
+
+  if (props.timezone) {
+    const zone = ICAL.TimezoneService.get(props.timezone);
+    if (zone?.component) {
+      calendar.addSubcomponent(zone.component);
+    }
+  }
+
+  const vtodo = new ICAL.Component("vtodo");
+  const uid = props.uid ?? `${randomUUID()}@pim-core`;
+  const status = props.status ?? "needs-action";
+
+  vtodo.updatePropertyWithValue("uid", uid);
+  vtodo.updatePropertyWithValue("dtstamp", ICAL.Time.now());
+  vtodo.updatePropertyWithValue("summary", props.title);
+  vtodo.updatePropertyWithValue("status", status.toUpperCase());
+
+  if (props.description) vtodo.updatePropertyWithValue("description", props.description);
+  if (props.priority !== undefined) vtodo.updatePropertyWithValue("priority", props.priority);
+  if (props.percent_complete !== undefined) {
+    vtodo.updatePropertyWithValue("percent-complete", props.percent_complete);
+  }
+
+  if (props.due) {
+    const due = toIcalTime(props.due, false, props.timezone);
+    const dueProp = vtodo.updatePropertyWithValue("due", due);
+    if (props.timezone) dueProp.setParameter("tzid", props.timezone);
+  }
+
+  if (props.completed) {
+    const completed = ICAL.Time.fromJSDate(new Date(props.completed), true);
+    vtodo.updatePropertyWithValue("completed", completed);
+  }
+
+  if (props.categories && props.categories.length > 0) {
+    const categories = new ICAL.Property("categories");
+    categories.setValues(props.categories);
+    vtodo.addProperty(categories);
+  }
+
+  if (props.recurrence_rule) {
+    const normalized = normalizeRecurrenceRule(props.recurrence_rule);
+    if (!normalized) {
+      throw new IcsGenerateError(`Invalid recurrence_rule: ${props.recurrence_rule}`, null);
+    }
+    vtodo.addProperty(ICAL.Property.fromString(`RRULE:${normalized}`));
+  }
+
+  if (props.alarms) {
+    for (const alarm of props.alarms) {
+      const valarm = new ICAL.Component("valarm");
+      valarm.updatePropertyWithValue("action", "DISPLAY");
+      valarm.updatePropertyWithValue("description", props.title);
+      if (alarm.type === "relative" && typeof alarm.trigger === "number") {
+        valarm.updatePropertyWithValue("trigger", ICAL.Duration.fromSeconds(alarm.trigger));
+      } else if (alarm.type === "absolute" && typeof alarm.trigger === "string") {
+        valarm.updatePropertyWithValue("trigger", ICAL.Time.fromJSDate(new Date(alarm.trigger), true));
+      }
+      vtodo.addSubcomponent(valarm);
+    }
+  }
+
+  calendar.addSubcomponent(vtodo);
   return calendar.toString();
 }

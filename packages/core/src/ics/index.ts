@@ -14,12 +14,14 @@ export type {
   ParsedJournal,
   TimeRange,
   EventCreateProps,
+  TodoCreateProps,
 } from "./types.js";
 export { normalizeRecurrenceRule } from "./rrule.js";
 export { parseIcsEvents } from "./parse-events.js";
 export { parseIcsTodos } from "./parse-todos.js";
 export { parseIcsJournals } from "./parse-journals.js";
 export { generateEventIcs } from "./generate.js";
+export { generateTodoIcs } from "./generate.js";
 export {
   createExceptionComponent,
   combineIcsComponents,

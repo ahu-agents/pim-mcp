@@ -9,6 +9,7 @@ AI agent tooling for email (IMAP/SMTP), calendar (CalDAV), and contacts (CardDAV
 | [@miguelarios/email-mcp](packages/email-mcp) | Email via IMAP/SMTP | `npx @miguelarios/email-mcp` |
 | [@miguelarios/cal-mcp](packages/cal-mcp) | Calendars via CalDAV | `npx @miguelarios/cal-mcp` |
 | [@miguelarios/card-mcp](packages/card-mcp) | Contacts via CardDAV | `npx @miguelarios/card-mcp` |
+| [@miguelarios/tasks-mcp](packages/tasks-mcp) | Tasks/reminders via CalDAV VTODO | `npx @miguelarios/tasks-mcp` |
 
 ## Tools
 
@@ -55,6 +56,18 @@ AI agent tooling for email (IMAP/SMTP), calendar (CalDAV), and contacts (CardDAV
 | `update_contact` | Update an existing contact (merge-based) |
 | `delete_contact` | Delete a contact by UID |
 | `resolve_contact` | Given a name, return email address |
+
+### Tasks (7 tools)
+
+| Tool | Description |
+|------|-------------|
+| `list_task_lists` | Discover VTODO-capable task lists across configured CalDAV providers |
+| `list_tasks` | List tasks from one or all task lists |
+| `get_task` | Get full task details by UID |
+| `create_task` | Create a VTODO task with due date, alarms, priority, and tags |
+| `update_task` | Update an existing task |
+| `complete_task` | Mark a task complete |
+| `delete_task` | Delete a task by UID |
 
 ## Configuration
 
