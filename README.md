@@ -1,6 +1,6 @@
-# PIM Agents
+# PIM MCP
 
-AI agent tooling for email (IMAP/SMTP), calendar (CalDAV), and contacts (CardDAV). Three independent MCP servers built on open protocols.
+AI agent tooling for personal information management: email (IMAP/SMTP), calendar (CalDAV), CalDAV VTODO tasks/reminders, and contacts (CardDAV). This fork adds a unified `pim-mcp` server while keeping the component servers available.
 
 ## Packages
 
@@ -10,6 +10,7 @@ AI agent tooling for email (IMAP/SMTP), calendar (CalDAV), and contacts (CardDAV
 | [@miguelarios/cal-mcp](packages/cal-mcp) | Calendars via CalDAV | `npx @miguelarios/cal-mcp` |
 | [@miguelarios/card-mcp](packages/card-mcp) | Contacts via CardDAV | `npx @miguelarios/card-mcp` |
 | [@miguelarios/tasks-mcp](packages/tasks-mcp) | Tasks/reminders via CalDAV VTODO | `npx @miguelarios/tasks-mcp` |
+| [pim-mcp](packages/pim-mcp) | Unified email, calendar, and task MCP server | `pim-mcp` |
 
 ## Tools
 
@@ -68,6 +69,34 @@ AI agent tooling for email (IMAP/SMTP), calendar (CalDAV), and contacts (CardDAV
 | `update_task` | Update an existing task |
 | `complete_task` | Mark a task complete |
 | `delete_task` | Delete a task by UID |
+
+## Unified server
+
+The canonical AHU deployment uses the unified `pim-mcp` package:
+
+```json
+{
+  "mcpServers": {
+    "pim": {
+      "command": "pim-mcp",
+      "env": {
+        "IMAP_HOST": "imap.example.com",
+        "IMAP_USER": "user@example.com",
+        "IMAP_PASS": "your-app-password",
+        "SMTP_HOST": "smtp.example.com",
+        "SMTP_USER": "user@example.com",
+        "SMTP_PASS": "your-app-password",
+        "SMTP_ALLOWED_FROM": "ai-agents@example.com",
+        "CALDAV_MAILBOX_URL": "https://dav.example.com/caldav/",
+        "CALDAV_MAILBOX_USER": "user@example.com",
+        "CALDAV_MAILBOX_PASS": "app-password"
+      }
+    }
+  }
+}
+```
+
+The individual `email`, `calendar`, and `tasks` servers remain useful for compatibility and smaller deployments.
 
 ## Configuration
 
