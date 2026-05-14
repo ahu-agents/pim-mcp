@@ -39,6 +39,7 @@ CALDAV_NEXTCLOUD_PASS=app-password
 | `get_event` | Get event details by UID |
 | `create_event` | Create event with title, start/end, location, attendees |
 | `update_event` | Update existing event by UID |
+| `move_event` | Move an event to another calendar, equivalent to changing its calendar in iCal |
 | `delete_event` | Delete event by UID |
 | `create_events_batch` | Create multiple events at once |
 | `import_ics` | Parse .ics content and create events |
