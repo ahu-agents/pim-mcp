@@ -22,7 +22,8 @@ npx @miguelarios/email-mcp
 | `SMTP_PASS` | Yes | — | SMTP password |
 | `SMTP_PORT` | No | `465` | SMTP port |
 | `SMTP_SECURE` | No | `true` | Use TLS |
-| `SMTP_FROM_NAME` | No | — | Display name for outgoing emails |
+| `SMTP_FROM_NAME` | No | — | Default display name for outgoing emails |
+| `SMTP_ALLOWED_FROM` | No | — | Comma-separated allowlist of additional visible `From` addresses |
 
 ## Tools
 
@@ -30,7 +31,7 @@ npx @miguelarios/email-mcp
 |------|-------------|
 | `list_emails` | Search and filter emails by folder, sender, subject, date, flags |
 | `get_email` | Fetch full email by UID — headers, body, attachment metadata |
-| `send_email` | Compose and send via SMTP with attachment support |
+| `send_email` | Compose/send via SMTP, save drafts, reply with threading, and optionally use an allowed visible From address |
 | `move_email` | Move email between folders |
 | `mark_email` | Set/unset flags (read, unread, flagged) |
 | `delete_email` | Move to trash or permanently delete |
