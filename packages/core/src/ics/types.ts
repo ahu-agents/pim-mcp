@@ -99,3 +99,18 @@ export interface EventCreateProps {
   organizer?: { email: string; name?: string | null };
   availability?: "busy" | "free";
 }
+
+export interface TodoCreateProps {
+  title: string;
+  due?: string;
+  description?: string;
+  status?: "needs-action" | "in-process" | "completed" | "cancelled";
+  completed?: string;
+  percent_complete?: number;
+  priority?: number;
+  uid?: string;
+  timezone?: string;
+  alarms?: Array<{ type: "relative" | "absolute"; trigger: number | string }>;
+  categories?: string[];
+  recurrence_rule?: string;
+}

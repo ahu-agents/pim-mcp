@@ -1,0 +1,36 @@
+{
+  "name": "@miguelarios/tasks-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for CalDAV VTODO task lists and reminders",
+  "keywords": ["mcp", "tasks", "reminders", "caldav", "vtodo"],
+  "license": "MIT",
+  "author": "Miguel Rios",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miguelarios/pim-agents.git",
+    "directory": "packages/tasks-mcp"
+  },
+  "homepage": "https://github.com/miguelarios/pim-agents",
+  "bugs": "https://github.com/miguelarios/pim-agents/issues",
+  "type": "module",
+  "bin": {
+    "tasks-mcp": "dist/bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "start": "node dist/bin/cli.js"
+  },
+  "dependencies": {
+    "@miguelarios/pim-core": "^0.6.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "tsdav": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
