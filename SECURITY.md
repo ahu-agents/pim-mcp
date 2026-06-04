@@ -6,7 +6,7 @@ The `main` branch and the latest published package versions are the actively sup
 ## Reporting a Vulnerability
 Please do not open public issues for security vulnerabilities.
 
-Report privately to the maintainer and include:
+Report privately by email to security@ahu.services and include:
 - affected package or tool
 - impact and attack scenario
 - reproduction steps
