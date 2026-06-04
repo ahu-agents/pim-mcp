@@ -129,7 +129,11 @@ export class TaskDavService {
     return { account, listName };
   }
 
-  private async findCalendar(client: DAVClient, listName: string, providerId: string): Promise<any> {
+  private async findCalendar(
+    client: DAVClient,
+    listName: string,
+    providerId: string,
+  ): Promise<any> {
     let calendars = this.calendarsCache.get(providerId);
     if (!calendars) {
       calendars = await client.fetchCalendars();
@@ -262,7 +266,10 @@ export class TaskDavService {
     return allTaskLists;
   }
 
-  async listTasks(taskListId: string, options: { includeCompleted?: boolean } = {}): Promise<TaskSummary[]> {
+  async listTasks(
+    taskListId: string,
+    options: { includeCompleted?: boolean } = {},
+  ): Promise<TaskSummary[]> {
     const { account, listName } = this.resolveAccount(taskListId);
     const client = await this.getClient(account);
     const calendar = await this.findCalendar(client, listName, account.id);
@@ -325,7 +332,9 @@ export class TaskDavService {
         filename: `${uid}.ics`,
       });
       if (response && !(response as any).ok) {
-        throw new Error(`Failed to create task: ${(response as any).statusText ?? "unknown error"}`);
+        throw new Error(
+          `Failed to create task: ${(response as any).statusText ?? "unknown error"}`,
+        );
       }
       return await this.getTask(taskListId, uid);
     } catch (error) {

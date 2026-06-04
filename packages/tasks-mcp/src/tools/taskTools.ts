@@ -32,8 +32,7 @@ async function fetchTasks(
 export const TASK_TOOLS: Tool[] = [
   {
     name: "list_task_lists",
-    description:
-      "List all CalDAV task lists that support VTODO across all configured providers.",
+    description: "List all CalDAV task lists that support VTODO across all configured providers.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -273,14 +272,15 @@ export async function handleTaskTool(
           args.completed !== undefined
             ? (args.completed as string)
             : nextStatus === "completed"
-              ? existing.completed ?? new Date().toISOString()
+              ? (existing.completed ?? new Date().toISOString())
               : undefined;
         try {
           const icsString = generateTodoIcs({
             uid: args.uid as string,
             title: (args.title as string | undefined) ?? existing.title,
             due: (args.due as string | undefined) ?? existing.due ?? undefined,
-            description: (args.description as string | undefined) ?? existing.description ?? undefined,
+            description:
+              (args.description as string | undefined) ?? existing.description ?? undefined,
             status: nextStatus,
             completed,
             percent_complete: nextPercent,
@@ -289,12 +289,18 @@ export async function handleTaskTool(
             alarms:
               (args.alarms as
                 | Array<{ type: "relative" | "absolute"; trigger: number | string }>
-                | undefined) ?? existing.alarms.map((alarm) => ({ type: alarm.type, trigger: alarm.trigger })),
+                | undefined) ??
+              existing.alarms.map((alarm) => ({ type: alarm.type, trigger: alarm.trigger })),
             recurrence_rule:
               (args.recurrence_rule as string | undefined) ?? existing.recurrence_rule ?? undefined,
             timezone: getTimezone(),
           });
-          const task = await service.updateTask(args.task_list as string, args.uid as string, icsString, meta);
+          const task = await service.updateTask(
+            args.task_list as string,
+            args.uid as string,
+            icsString,
+            meta,
+          );
           return ok({ task });
         } catch (err) {
           if (err instanceof Error && err.message.startsWith("Invalid recurrence_rule:")) {
@@ -323,7 +329,12 @@ export async function handleTaskTool(
           recurrence_rule: existing.recurrence_rule ?? undefined,
           timezone: getTimezone(),
         });
-        const task = await service.updateTask(args.task_list as string, args.uid as string, icsString, meta);
+        const task = await service.updateTask(
+          args.task_list as string,
+          args.uid as string,
+          icsString,
+          meta,
+        );
         return ok({ task });
       }
 

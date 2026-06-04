@@ -1,15 +1,15 @@
-import { loadCalDavConfig, loadEmailConfig } from "@miguelarios/pim-core";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CalDavService } from "@miguelarios/cal-mcp/services/CalDavService";
+import { CALENDAR_TOOLS, handleCalendarTool } from "@miguelarios/cal-mcp/tools";
 import { disposeUrlCleaner } from "@miguelarios/email-mcp/htmlToMarkdown";
 import { ImapService } from "@miguelarios/email-mcp/services/ImapService";
 import { SmtpService } from "@miguelarios/email-mcp/services/SmtpService";
 import { EMAIL_TOOLS, handleEmailTool } from "@miguelarios/email-mcp/tools";
-import { CalDavService } from "@miguelarios/cal-mcp/services/CalDavService";
-import { CALENDAR_TOOLS, handleCalendarTool } from "@miguelarios/cal-mcp/tools";
+import { loadCalDavConfig, loadEmailConfig } from "@miguelarios/pim-core";
 import { TaskDavService } from "@miguelarios/tasks-mcp/services/TaskDavService";
 import { TASK_TOOLS, handleTaskTool } from "@miguelarios/tasks-mcp/tools";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 export const PIM_MCP_VERSION = "0.1.0";
 
