@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { EMAIL_TOOLS } from "@miguelarios/email-mcp/tools";
 import { CALENDAR_TOOLS } from "@miguelarios/cal-mcp/tools";
+import { EMAIL_TOOLS } from "@miguelarios/email-mcp/tools";
 import { TASK_TOOLS } from "@miguelarios/tasks-mcp/tools";
+import { describe, expect, it } from "vitest";
 import { PIM_MCP_VERSION, PIM_TOOLS } from "../main.js";
 
 describe("pim-mcp tool registry", () => {

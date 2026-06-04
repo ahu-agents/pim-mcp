@@ -173,7 +173,10 @@ export function generateTodoIcs(props: TodoCreateProps): string {
       if (alarm.type === "relative" && typeof alarm.trigger === "number") {
         valarm.updatePropertyWithValue("trigger", ICAL.Duration.fromSeconds(alarm.trigger));
       } else if (alarm.type === "absolute" && typeof alarm.trigger === "string") {
-        valarm.updatePropertyWithValue("trigger", ICAL.Time.fromJSDate(new Date(alarm.trigger), true));
+        valarm.updatePropertyWithValue(
+          "trigger",
+          ICAL.Time.fromJSDate(new Date(alarm.trigger), true),
+        );
       }
       vtodo.addSubcomponent(valarm);
     }
