@@ -1,16 +1,25 @@
 # PIM MCP
 
+> AI agent tooling for personal information management — email (IMAP/SMTP), calendar (CalDAV), tasks (CalDAV VTODO), and contacts (CardDAV).
+
+[![CI](https://github.com/ahu-agents/pim-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ahu-agents/pim-mcp/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-5FA04E?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License](https://img.shields.io/github/license/ahu-agents/pim-mcp)](LICENSE)
+
+[![Support via bunq](https://img.shields.io/badge/Support-bunq-00A1E0?style=flat-square&logo=bunq&logoColor=white)](https://bunq.me/ahuservices?description=pim-mcp-maintenance-support)
+
 AI agent tooling for personal information management: email (IMAP/SMTP), calendar (CalDAV), CalDAV VTODO tasks/reminders, and contacts (CardDAV). This fork adds a unified `pim-mcp` server while keeping the component servers available.
 
 ## Packages
 
-| Package | Description | Install |
-|---------|-------------|---------|
-| [@miguelarios/email-mcp](packages/email-mcp) | Email via IMAP/SMTP | `npx @miguelarios/email-mcp` |
-| [@miguelarios/cal-mcp](packages/cal-mcp) | Calendars via CalDAV | `npx @miguelarios/cal-mcp` |
-| [@miguelarios/card-mcp](packages/card-mcp) | Contacts via CardDAV | `npx @miguelarios/card-mcp` |
-| [@miguelarios/tasks-mcp](packages/tasks-mcp) | Tasks/reminders via CalDAV VTODO | `npx @miguelarios/tasks-mcp` |
-| [pim-mcp](packages/pim-mcp) | Unified email, calendar, and task MCP server | `pim-mcp` |
+| Package | Version | Description | Install |
+|---------|---------|-------------|---------|
+| [@miguelarios/email-mcp](packages/email-mcp) | [![npm](https://img.shields.io/npm/v/@miguelarios/email-mcp)](https://www.npmjs.com/package/@miguelarios/email-mcp) | Email via IMAP/SMTP | `npx @miguelarios/email-mcp` |
+| [@miguelarios/cal-mcp](packages/cal-mcp) | [![npm](https://img.shields.io/npm/v/@miguelarios/cal-mcp)](https://www.npmjs.com/package/@miguelarios/cal-mcp) | Calendars via CalDAV | `npx @miguelarios/cal-mcp` |
+| [@miguelarios/card-mcp](packages/card-mcp) | [![npm](https://img.shields.io/npm/v/@miguelarios/card-mcp)](https://www.npmjs.com/package/@miguelarios/card-mcp) | Contacts via CardDAV | `npx @miguelarios/card-mcp` |
+| [@miguelarios/tasks-mcp](packages/tasks-mcp) | — (unreleased) | Tasks/reminders via CalDAV VTODO | build from source |
+| [pim-mcp](packages/pim-mcp) | — (unreleased) | Unified email, calendar, and task MCP server | build from source |
 
 ## Tools
 
@@ -202,6 +211,17 @@ Add multiple providers by using different IDs: `CALDAV_NEXTCLOUD_URL`, `CALDAV_N
 }
 ```
 
+## Governance
+
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security policy: [SECURITY.md](SECURITY.md)
+- AI-agent guide: [AGENTS.md](AGENTS.md)
+- License: [LICENSE](LICENSE)
+
+## Support
+
+If this MCP toolkit is useful to you, you can [support its ongoing maintenance via bunq](https://bunq.me/ahuservices?description=pim-mcp-maintenance-support). Support is voluntary and appreciated, but does not create any entitlement to support, features, consulting, an SLA, or invoice-based work.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
