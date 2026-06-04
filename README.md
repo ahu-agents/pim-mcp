@@ -18,8 +18,8 @@ AI agent tooling for personal information management: email (IMAP/SMTP), calenda
 | [@miguelarios/email-mcp](packages/email-mcp) | [![npm](https://img.shields.io/npm/v/@miguelarios/email-mcp)](https://www.npmjs.com/package/@miguelarios/email-mcp) | Email via IMAP/SMTP | `npx @miguelarios/email-mcp` |
 | [@miguelarios/cal-mcp](packages/cal-mcp) | [![npm](https://img.shields.io/npm/v/@miguelarios/cal-mcp)](https://www.npmjs.com/package/@miguelarios/cal-mcp) | Calendars via CalDAV | `npx @miguelarios/cal-mcp` |
 | [@miguelarios/card-mcp](packages/card-mcp) | [![npm](https://img.shields.io/npm/v/@miguelarios/card-mcp)](https://www.npmjs.com/package/@miguelarios/card-mcp) | Contacts via CardDAV | `npx @miguelarios/card-mcp` |
-| [@miguelarios/tasks-mcp](packages/tasks-mcp) | — (unreleased) | Tasks/reminders via CalDAV VTODO | `npx @miguelarios/tasks-mcp` |
-| [pim-mcp](packages/pim-mcp) | — (unreleased) | Unified email, calendar, and task MCP server | `pim-mcp` |
+| [@miguelarios/tasks-mcp](packages/tasks-mcp) | — (unreleased) | Tasks/reminders via CalDAV VTODO | build from source |
+| [pim-mcp](packages/pim-mcp) | — (unreleased) | Unified email, calendar, and task MCP server | build from source |
 
 ## Tools
 
@@ -210,6 +210,13 @@ Add multiple providers by using different IDs: `CALDAV_NEXTCLOUD_URL`, `CALDAV_N
   }
 }
 ```
+
+## Governance
+
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security policy: [SECURITY.md](SECURITY.md)
+- AI-agent guide: [AGENTS.md](AGENTS.md)
+- License: [LICENSE](LICENSE)
 
 ## Support
 
