@@ -29,6 +29,12 @@ jobs:
 
       - run: npm ci
 
+      # Build workspace dependencies' dist (cross-package subpath imports
+      # resolve to dist). turbo's `^build` ordering runs via typecheck, the
+      # same prerequisite the build-and-test job relies on before `npm test`.
+      - name: Build workspace packages
+        run: npm run typecheck
+
       - name: Tests with coverage
         run: npm run test:coverage
 
